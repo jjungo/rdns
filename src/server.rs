@@ -130,6 +130,37 @@ impl DnsServer {
     }
 }
 
+/// Helper function to check cache for a given domain and query type
+async fn check_cache(
+    domain: &str,
+    qtype: u16,
+    cache: &Arc<RwLock<DnsCache>>,
+    stats: &Arc<DnsStats>,
+) -> Option<Vec<CacheEntry>> {
+    let mut cache_guard = cache.write().await;
+    if let Some(cached_entries) = cache_guard.get(domain, qtype) {
+        stats.record_cache_hit();
+        return Some(cached_entries);
+    }
+    drop(cache_guard);
+    stats.record_cache_miss();
+    stats.record_upstream_query();
+    None
+}
+
+/// Helper function to insert entries into cache
+async fn insert_cache(
+    domain: String,
+    qtype: u16,
+    entries: Vec<CacheEntry>,
+    cache: &Arc<RwLock<DnsCache>>,
+) {
+    if !entries.is_empty() {
+        let mut cache_guard = cache.write().await;
+        cache_guard.insert(domain, qtype, entries);
+    }
+}
+
 async fn handle_query(
     data: Vec<u8>,
     src: SocketAddr,
@@ -224,9 +255,7 @@ async fn handle_a_query(
     drop(records_guard);
 
     // Check cache
-    let mut cache_guard = cache.write().await;
-    if let Some(cached_entries) = cache_guard.get(domain, 1) {
-        stats.record_cache_hit();
+    if let Some(cached_entries) = check_cache(domain, 1, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::A(ip) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -238,11 +267,8 @@ async fn handle_a_query(
         }
         return;
     }
-    drop(cache_guard);
 
     // Forward to upstream DNS server
-    stats.record_cache_miss();
-    stats.record_upstream_query();
     println!("  Forwarding to upstream DNS for {} (A)", domain);
     match resolver.lookup_ip(domain).await {
         Ok(lookup) => {
@@ -265,10 +291,7 @@ async fn handle_a_query(
             }
 
             // Cache the results
-            if !cache_entries.is_empty() {
-                let mut cache_guard = cache.write().await;
-                cache_guard.insert(domain.to_string(), 1, cache_entries);
-            }
+            insert_cache(domain.to_string(), 1, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -284,9 +307,7 @@ async fn handle_aaaa_query(
     packet: &mut DnsPacket,
 ) {
     // Check cache
-    let mut cache_guard = cache.write().await;
-    if let Some(cached_entries) = cache_guard.get(domain, 28) {
-        stats.record_cache_hit();
+    if let Some(cached_entries) = check_cache(domain, 28, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::AAAA(ip) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -298,11 +319,8 @@ async fn handle_aaaa_query(
         }
         return;
     }
-    drop(cache_guard);
 
     // Forward to upstream
-    stats.record_cache_miss();
-    stats.record_upstream_query();
     println!("  Forwarding to upstream DNS for {} (AAAA)", domain);
     match resolver.lookup_ip(domain).await {
         Ok(lookup) => {
@@ -324,10 +342,7 @@ async fn handle_aaaa_query(
                 }
             }
 
-            if !cache_entries.is_empty() {
-                let mut cache_guard = cache.write().await;
-                cache_guard.insert(domain.to_string(), 28, cache_entries);
-            }
+            insert_cache(domain.to_string(), 28, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -345,9 +360,7 @@ async fn handle_ns_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    let mut cache_guard = cache.write().await;
-    if let Some(cached_entries) = cache_guard.get(domain, 2) {
-        stats.record_cache_hit();
+    if let Some(cached_entries) = check_cache(domain, 2, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::NS(ref ns) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -359,11 +372,8 @@ async fn handle_ns_query(
         }
         return;
     }
-    drop(cache_guard);
 
     // Forward to upstream
-    stats.record_cache_miss();
-    stats.record_upstream_query();
     println!("  Forwarding to upstream DNS for {} (NS)", domain);
     match resolver.lookup(domain, RecordType::NS).await {
         Ok(lookup) => {
@@ -388,10 +398,7 @@ async fn handle_ns_query(
                 }
             }
 
-            if !cache_entries.is_empty() {
-                let mut cache_guard = cache.write().await;
-                cache_guard.insert(domain.to_string(), 2, cache_entries);
-            }
+            insert_cache(domain.to_string(), 2, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -409,9 +416,7 @@ async fn handle_mx_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    let mut cache_guard = cache.write().await;
-    if let Some(cached_entries) = cache_guard.get(domain, 15) {
-        stats.record_cache_hit();
+    if let Some(cached_entries) = check_cache(domain, 15, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::MX {
                 priority,
@@ -431,11 +436,8 @@ async fn handle_mx_query(
         }
         return;
     }
-    drop(cache_guard);
 
     // Forward to upstream
-    stats.record_cache_miss();
-    stats.record_upstream_query();
     println!("  Forwarding to upstream DNS for {} (MX)", domain);
     match resolver.lookup(domain, RecordType::MX).await {
         Ok(lookup) => {
@@ -468,10 +470,7 @@ async fn handle_mx_query(
                 }
             }
 
-            if !cache_entries.is_empty() {
-                let mut cache_guard = cache.write().await;
-                cache_guard.insert(domain.to_string(), 15, cache_entries);
-            }
+            insert_cache(domain.to_string(), 15, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -489,9 +488,7 @@ async fn handle_cname_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    let mut cache_guard = cache.write().await;
-    if let Some(cached_entries) = cache_guard.get(domain, 5) {
-        stats.record_cache_hit();
+    if let Some(cached_entries) = check_cache(domain, 5, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::CNAME(ref cname) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -506,11 +503,8 @@ async fn handle_cname_query(
         }
         return;
     }
-    drop(cache_guard);
 
     // Forward to upstream
-    stats.record_cache_miss();
-    stats.record_upstream_query();
     println!("  Forwarding to upstream DNS for {} (CNAME)", domain);
     match resolver.lookup(domain, RecordType::CNAME).await {
         Ok(lookup) => {
@@ -535,10 +529,7 @@ async fn handle_cname_query(
                 }
             }
 
-            if !cache_entries.is_empty() {
-                let mut cache_guard = cache.write().await;
-                cache_guard.insert(domain.to_string(), 5, cache_entries);
-            }
+            insert_cache(domain.to_string(), 5, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -556,9 +547,7 @@ async fn handle_ptr_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    let mut cache_guard = cache.write().await;
-    if let Some(cached_entries) = cache_guard.get(domain, 12) {
-        stats.record_cache_hit();
+    if let Some(cached_entries) = check_cache(domain, 12, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::PTR(ref ptr) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -573,11 +562,8 @@ async fn handle_ptr_query(
         }
         return;
     }
-    drop(cache_guard);
 
     // Forward to upstream
-    stats.record_cache_miss();
-    stats.record_upstream_query();
     println!("  Forwarding to upstream DNS for {} (PTR)", domain);
     match resolver.lookup(domain, RecordType::PTR).await {
         Ok(lookup) => {
@@ -602,10 +588,7 @@ async fn handle_ptr_query(
                 }
             }
 
-            if !cache_entries.is_empty() {
-                let mut cache_guard = cache.write().await;
-                cache_guard.insert(domain.to_string(), 12, cache_entries);
-            }
+            insert_cache(domain.to_string(), 12, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -623,9 +606,7 @@ async fn handle_txt_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    let mut cache_guard = cache.write().await;
-    if let Some(cached_entries) = cache_guard.get(domain, 16) {
-        stats.record_cache_hit();
+    if let Some(cached_entries) = check_cache(domain, 16, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::TXT(ref txt) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -640,11 +621,8 @@ async fn handle_txt_query(
         }
         return;
     }
-    drop(cache_guard);
 
     // Forward to upstream
-    stats.record_cache_miss();
-    stats.record_upstream_query();
     println!("  Forwarding to upstream DNS for {} (TXT)", domain);
     match resolver.lookup(domain, RecordType::TXT).await {
         Ok(lookup) => {
@@ -675,10 +653,7 @@ async fn handle_txt_query(
                 }
             }
 
-            if !cache_entries.is_empty() {
-                let mut cache_guard = cache.write().await;
-                cache_guard.insert(domain.to_string(), 16, cache_entries);
-            }
+            insert_cache(domain.to_string(), 16, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -696,9 +671,7 @@ async fn handle_soa_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    let mut cache_guard = cache.write().await;
-    if let Some(cached_entries) = cache_guard.get(domain, 6) {
-        stats.record_cache_hit();
+    if let Some(cached_entries) = check_cache(domain, 6, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::SOA {
                 ref mname,
@@ -732,11 +705,8 @@ async fn handle_soa_query(
         }
         return;
     }
-    drop(cache_guard);
 
     // Forward to upstream
-    stats.record_cache_miss();
-    stats.record_upstream_query();
     println!("  Forwarding to upstream DNS for {} (SOA)", domain);
     match resolver.lookup(domain, RecordType::SOA).await {
         Ok(lookup) => {
@@ -789,10 +759,7 @@ async fn handle_soa_query(
                 }
             }
 
-            if !cache_entries.is_empty() {
-                let mut cache_guard = cache.write().await;
-                cache_guard.insert(domain.to_string(), 6, cache_entries);
-            }
+            insert_cache(domain.to_string(), 6, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);

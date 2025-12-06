@@ -126,18 +126,9 @@ impl DnsQuestion {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-
-        // Encode domain name
-        for label in self.name.split('.') {
-            bytes.push(label.len() as u8);
-            bytes.extend_from_slice(label.as_bytes());
-        }
-        bytes.push(0); // Null terminator
-
+        let mut bytes = encode_domain_name(&self.name);
         bytes.extend_from_slice(&u16::from(self.qtype).to_be_bytes());
         bytes.extend_from_slice(&self.qclass.to_be_bytes());
-
         bytes
     }
 }
@@ -173,76 +164,39 @@ impl DnsAnswer {
     }
 
     pub fn new_ns_record(name: String, ttl: u32, nameserver: String) -> Self {
-        let mut data = Vec::new();
-        let ns_clean = nameserver.trim_end_matches('.');
-        for label in ns_clean.split('.') {
-            if !label.is_empty() {
-                data.push(label.len() as u8);
-                data.extend_from_slice(label.as_bytes());
-            }
-        }
-        data.push(0); // Null terminator
-
         DnsAnswer {
             name,
             qtype: QueryType::NS,
             qclass: 1,
             ttl,
-            data,
+            data: encode_domain_name(&nameserver),
         }
     }
 
     pub fn new_cname_record(name: String, ttl: u32, cname: String) -> Self {
-        let mut data = Vec::new();
-        let cname_clean = cname.trim_end_matches('.');
-        for label in cname_clean.split('.') {
-            if !label.is_empty() {
-                data.push(label.len() as u8);
-                data.extend_from_slice(label.as_bytes());
-            }
-        }
-        data.push(0); // Null terminator
-
         DnsAnswer {
             name,
             qtype: QueryType::CNAME,
             qclass: 1,
             ttl,
-            data,
+            data: encode_domain_name(&cname),
         }
     }
 
     pub fn new_ptr_record(name: String, ttl: u32, ptrdname: String) -> Self {
-        let mut data = Vec::new();
-        let ptr_clean = ptrdname.trim_end_matches('.');
-        for label in ptr_clean.split('.') {
-            if !label.is_empty() {
-                data.push(label.len() as u8);
-                data.extend_from_slice(label.as_bytes());
-            }
-        }
-        data.push(0); // Null terminator
-
         DnsAnswer {
             name,
             qtype: QueryType::PTR,
             qclass: 1,
             ttl,
-            data,
+            data: encode_domain_name(&ptrdname),
         }
     }
 
     pub fn new_mx_record(name: String, ttl: u32, priority: u16, exchange: String) -> Self {
         let mut data = Vec::new();
         data.extend_from_slice(&priority.to_be_bytes());
-        let exchange_clean = exchange.trim_end_matches('.');
-        for label in exchange_clean.split('.') {
-            if !label.is_empty() {
-                data.push(label.len() as u8);
-                data.extend_from_slice(label.as_bytes());
-            }
-        }
-        data.push(0); // Null terminator
+        data.extend_from_slice(&encode_domain_name(&exchange));
 
         DnsAnswer {
             name,
@@ -291,24 +245,10 @@ impl DnsAnswer {
         let mut data = Vec::new();
 
         // Encode MNAME (primary name server)
-        let mname_clean = mname.trim_end_matches('.');
-        for label in mname_clean.split('.') {
-            if !label.is_empty() {
-                data.push(label.len() as u8);
-                data.extend_from_slice(label.as_bytes());
-            }
-        }
-        data.push(0);
+        data.extend_from_slice(&encode_domain_name(&mname));
 
         // Encode RNAME (responsible party email)
-        let rname_clean = rname.trim_end_matches('.');
-        for label in rname_clean.split('.') {
-            if !label.is_empty() {
-                data.push(label.len() as u8);
-                data.extend_from_slice(label.as_bytes());
-            }
-        }
-        data.push(0);
+        data.extend_from_slice(&encode_domain_name(&rname));
 
         // Add SOA fields
         data.extend_from_slice(&serial.to_be_bytes());
@@ -327,21 +267,12 @@ impl DnsAnswer {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-
-        // Encode domain name
-        for label in self.name.split('.') {
-            bytes.push(label.len() as u8);
-            bytes.extend_from_slice(label.as_bytes());
-        }
-        bytes.push(0); // Null terminator
-
+        let mut bytes = encode_domain_name(&self.name);
         bytes.extend_from_slice(&u16::from(self.qtype).to_be_bytes());
         bytes.extend_from_slice(&self.qclass.to_be_bytes());
         bytes.extend_from_slice(&self.ttl.to_be_bytes());
         bytes.extend_from_slice(&(self.data.len() as u16).to_be_bytes());
         bytes.extend_from_slice(&self.data);
-
         bytes
     }
 }
@@ -385,6 +316,20 @@ impl DnsPacket {
 
         bytes
     }
+}
+
+/// Encode a domain name into DNS wire format (length-prefixed labels)
+fn encode_domain_name(domain: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let domain_clean = domain.trim_end_matches('.');
+    for label in domain_clean.split('.') {
+        if !label.is_empty() {
+            bytes.push(label.len() as u8);
+            bytes.extend_from_slice(label.as_bytes());
+        }
+    }
+    bytes.push(0); // Null terminator
+    bytes
 }
 
 fn parse_domain_name(buf: &[u8], mut offset: usize) -> Result<(String, usize), String> {
@@ -434,4 +379,97 @@ fn parse_domain_name(buf: &[u8], mut offset: usize) -> Result<(String, usize), S
     let final_offset = if jumped { jump_offset } else { offset };
 
     Ok((name, final_offset))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encode_domain_name() {
+        let domain = "example.com";
+        let mut expected = Vec::new();
+        expected.push(7); // "example"
+        expected.extend_from_slice(b"example");
+        expected.push(3); // "com"
+        expected.extend_from_slice(b"com");
+        expected.push(0); // null terminator
+
+        let question = DnsQuestion {
+            name: domain.to_string(),
+            qtype: QueryType::A,
+            qclass: 1,
+        };
+
+        let bytes = question.to_bytes();
+        assert_eq!(&bytes[..expected.len()], &expected[..]);
+    }
+
+    #[test]
+    fn test_parse_domain_name() {
+        let mut buf = Vec::new();
+        buf.push(7); // "example"
+        buf.extend_from_slice(b"example");
+        buf.push(3); // "com"
+        buf.extend_from_slice(b"com");
+        buf.push(0); // null terminator
+
+        let (name, offset) = parse_domain_name(&buf, 0).unwrap();
+        assert_eq!(name, "example.com");
+        assert_eq!(offset, buf.len());
+    }
+
+    #[test]
+    fn test_dns_answer_a_record() {
+        let answer =
+            DnsAnswer::new_a_record("test.com".to_string(), 300, Ipv4Addr::new(1, 2, 3, 4));
+        assert_eq!(answer.name, "test.com");
+        assert_eq!(answer.ttl, 300);
+        assert_eq!(answer.data, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_dns_answer_aaaa_record() {
+        let answer = DnsAnswer::new_aaaa_record(
+            "test.com".to_string(),
+            300,
+            Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1),
+        );
+        assert_eq!(answer.name, "test.com");
+        assert_eq!(answer.ttl, 300);
+        assert_eq!(answer.data.len(), 16);
+    }
+
+    #[test]
+    fn test_dns_answer_ns_record() {
+        let answer = DnsAnswer::new_ns_record(
+            "example.com".to_string(),
+            300,
+            "ns1.example.com".to_string(),
+        );
+        let bytes = answer.to_bytes();
+        // Should contain encoded domain names
+        assert!(bytes.len() > 20);
+    }
+
+    #[test]
+    fn test_dns_answer_mx_record() {
+        let answer = DnsAnswer::new_mx_record(
+            "example.com".to_string(),
+            300,
+            10,
+            "mail.example.com".to_string(),
+        );
+        // First 2 bytes of data should be priority
+        assert_eq!(answer.data[0..2], [0, 10]);
+    }
+
+    #[test]
+    fn test_dns_answer_txt_record() {
+        let text = "v=spf1 include:_spf.example.com ~all";
+        let answer = DnsAnswer::new_txt_record("example.com".to_string(), 300, text.to_string());
+        // First byte should be length
+        assert_eq!(answer.data[0], text.len() as u8);
+        assert_eq!(answer.data.len(), text.len() + 1); // +1 for length prefix
+    }
 }
