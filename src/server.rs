@@ -322,6 +322,7 @@ async fn handle_a_query(
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
             packet.header.set_rcode(RCODE_SERVER_FAILURE);
+            stats.record_unresolved();
         }
     }
 }
@@ -374,6 +375,7 @@ async fn handle_aaaa_query(
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
             packet.header.set_rcode(RCODE_SERVER_FAILURE);
+            stats.record_unresolved();
         }
     }
 }
@@ -431,6 +433,7 @@ async fn handle_ns_query(
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
             packet.header.set_rcode(RCODE_SERVER_FAILURE);
+            stats.record_unresolved();
         }
     }
 }
@@ -504,6 +507,7 @@ async fn handle_mx_query(
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
             packet.header.set_rcode(RCODE_SERVER_FAILURE);
+            stats.record_unresolved();
         }
     }
 }
@@ -564,6 +568,7 @@ async fn handle_cname_query(
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
             packet.header.set_rcode(RCODE_SERVER_FAILURE);
+            stats.record_unresolved();
         }
     }
 }
@@ -624,6 +629,7 @@ async fn handle_ptr_query(
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
             packet.header.set_rcode(RCODE_SERVER_FAILURE);
+            stats.record_unresolved();
         }
     }
 }
@@ -698,6 +704,7 @@ async fn handle_txt_query(
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
             packet.header.set_rcode(RCODE_SERVER_FAILURE);
+            stats.record_unresolved();
         }
     }
 }
@@ -805,6 +812,7 @@ async fn handle_soa_query(
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
             packet.header.set_rcode(RCODE_SERVER_FAILURE);
+            stats.record_unresolved();
         }
     }
 }

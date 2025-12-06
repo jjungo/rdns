@@ -13,6 +13,7 @@ pub struct DnsStats {
     cache_hits: AtomicU64,
     cache_misses: AtomicU64,
     upstream_queries: AtomicU64,
+    unresolved_queries: AtomicU64,
     queries_by_type: HashMap<u16, AtomicU64>,
     total_response_time_ms: AtomicU64,
 }
@@ -40,6 +41,7 @@ impl Default for DnsStats {
             cache_hits: AtomicU64::new(0),
             cache_misses: AtomicU64::new(0),
             upstream_queries: AtomicU64::new(0),
+            unresolved_queries: AtomicU64::new(0),
             queries_by_type,
             total_response_time_ms: AtomicU64::new(0),
         }
@@ -70,6 +72,10 @@ impl DnsStats {
         self.upstream_queries.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn record_unresolved(&self) {
+        self.unresolved_queries.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn record_response_time(&self, duration: Duration) {
         self.total_response_time_ms
             .fetch_add(duration.as_millis() as u64, Ordering::Relaxed);
@@ -93,6 +99,10 @@ impl DnsStats {
 
     pub fn get_upstream_queries(&self) -> u64 {
         self.upstream_queries.load(Ordering::Relaxed)
+    }
+
+    pub fn get_unresolved_queries(&self) -> u64 {
+        self.unresolved_queries.load(Ordering::Relaxed)
     }
 
     pub fn get_cache_hit_ratio(&self) -> f64 {
@@ -172,6 +182,11 @@ impl DnsStats {
         )?;
         writeln!(file, "  Cache Misses:      {}", self.get_cache_misses())?;
         writeln!(file, "  Upstream Queries:  {}", self.get_upstream_queries())?;
+        writeln!(
+            file,
+            "  Unresolved:        {}",
+            self.get_unresolved_queries()
+        )?;
         writeln!(file, "  Cache Entries:     {}", cache_size)?;
         writeln!(file)?;
         writeln!(file, "Queries by Type:")?;
@@ -275,5 +290,18 @@ mod tests {
         let qps = stats.get_queries_per_second();
         assert!(qps > 0.0);
         assert!(qps < 100.0); // Should be around 20 qps for 2 queries in 0.1s
+    }
+
+    #[test]
+    fn test_unresolved_queries() {
+        let stats = DnsStats::new();
+        assert_eq!(stats.get_unresolved_queries(), 0);
+
+        stats.record_unresolved();
+        assert_eq!(stats.get_unresolved_queries(), 1);
+
+        stats.record_unresolved();
+        stats.record_unresolved();
+        assert_eq!(stats.get_unresolved_queries(), 3);
     }
 }
