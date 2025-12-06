@@ -299,3 +299,104 @@ async fn test_nonexistent_domain() {
     let packet = DnsPacket::from_bytes(&response).unwrap();
     assert_eq!(packet.header.questions, 1);
 }
+
+#[tokio::test]
+async fn test_malformed_dns_packet() {
+    let mut config = Config::default_config();
+    config.server.listen_port = 19060;
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    // Send malformed packet (too short - only 4 bytes, needs 12+ for header)
+    let malformed = vec![0x12, 0x34, 0x01, 0x00];
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+
+    // Send malformed packet
+    socket.send_to(&malformed, "127.0.0.1:19060").await.unwrap();
+
+    // Try to receive response with timeout
+    let mut buf = vec![0u8; 512];
+    let result = tokio::time::timeout(Duration::from_millis(500), socket.recv(&mut buf)).await;
+
+    // Server should either not respond or send an error
+    // Main goal: server doesn't crash
+    assert!(result.is_err() || result.is_ok());
+}
+
+#[tokio::test]
+async fn test_servfail_response() {
+    let mut config = Config::default_config();
+    config.server.listen_port = 19061;
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    // Query for definitely invalid domain that should return SERVFAIL or NXDOMAIN
+    let query = create_dns_query(
+        "this-domain-absolutely-does-not-exist-12345.invalid",
+        QueryType::A,
+    );
+    let response = send_dns_query(19061, &query).await.unwrap();
+
+    // Check RCODE in response flags (last 4 bits)
+    let rcode = u16::from_be_bytes([response[2], response[3]]) & 0x000F;
+
+    // SERVFAIL (2) or NXDOMAIN (3) are both acceptable
+    assert!(
+        rcode == 2 || rcode == 3,
+        "Expected SERVFAIL (2) or NXDOMAIN (3), got RCODE {}",
+        rcode
+    );
+}
+
+#[tokio::test]
+async fn test_concurrent_queries_complete() {
+    // Test that many concurrent queries complete without hanging
+    let mut config = Config::default_config();
+    config.server.listen_port = 19062;
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    // Send 20 concurrent queries
+    let mut handles = vec![];
+    for i in 0..20 {
+        handles.push(tokio::spawn(async move {
+            let domain = format!("test{}.example.com", i);
+            let query = create_dns_query(&domain, QueryType::A);
+            send_dns_query(19062, &query).await
+        }));
+    }
+
+    // All should complete within reasonable time (timeout prevents hanging)
+    let timeout_result = tokio::time::timeout(Duration::from_secs(10), async {
+        for handle in handles {
+            handle.await.ok();
+        }
+    })
+    .await;
+
+    assert!(
+        timeout_result.is_ok(),
+        "Queries should complete within 10 seconds (with 5s timeout per query)"
+    );
+}

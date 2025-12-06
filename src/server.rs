@@ -2,17 +2,20 @@ use crate::cache::{CacheEntry, DnsCache, RecordData};
 use crate::config::Config;
 use crate::dns::{
     DnsAnswer, DnsPacket, QTYPE_A, QTYPE_AAAA, QTYPE_CNAME, QTYPE_MX, QTYPE_NS, QTYPE_PTR,
-    QTYPE_SOA, QTYPE_TXT, QueryType,
+    QTYPE_SOA, QTYPE_TXT, QueryType, RCODE_SERVER_FAILURE,
 };
 use crate::stats::DnsStats;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use trust_dns_resolver::TokioAsyncResolver;
 use trust_dns_resolver::config::*;
+
+// Timeout for upstream DNS queries
+const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct DnsServer {
     records: Arc<RwLock<HashMap<String, Ipv4Addr>>>,
@@ -164,6 +167,26 @@ async fn insert_cache(
     }
 }
 
+/// Wraps an upstream DNS query with a timeout to prevent hanging
+async fn with_timeout<F, T>(
+    future: F,
+    domain: &str,
+    qtype: &str,
+) -> Result<T, trust_dns_resolver::error::ResolveError>
+where
+    F: std::future::Future<Output = Result<T, trust_dns_resolver::error::ResolveError>>,
+{
+    match tokio::time::timeout(UPSTREAM_TIMEOUT, future).await {
+        Ok(result) => result,
+        Err(_) => {
+            eprintln!("Upstream DNS timeout for {} ({})", domain, qtype);
+            Err(trust_dns_resolver::error::ResolveError::from(
+                trust_dns_resolver::error::ResolveErrorKind::Timeout,
+            ))
+        }
+    }
+}
+
 async fn handle_query(
     data: Vec<u8>,
     src: SocketAddr,
@@ -273,7 +296,7 @@ async fn handle_a_query(
 
     // Forward to upstream DNS server
     println!("  Forwarding to upstream DNS for {} (A)", domain);
-    match resolver.lookup_ip(domain).await {
+    match with_timeout(resolver.lookup_ip(domain), domain, "A").await {
         Ok(lookup) => {
             let ttl = 300u32;
             let mut cache_entries = Vec::new();
@@ -298,6 +321,7 @@ async fn handle_a_query(
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
+            packet.header.set_rcode(RCODE_SERVER_FAILURE);
         }
     }
 }
@@ -325,7 +349,7 @@ async fn handle_aaaa_query(
 
     // Forward to upstream
     println!("  Forwarding to upstream DNS for {} (AAAA)", domain);
-    match resolver.lookup_ip(domain).await {
+    match with_timeout(resolver.lookup_ip(domain), domain, "AAAA").await {
         Ok(lookup) => {
             let ttl = 300u32;
             let mut cache_entries = Vec::new();
@@ -349,6 +373,7 @@ async fn handle_aaaa_query(
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
+            packet.header.set_rcode(RCODE_SERVER_FAILURE);
         }
     }
 }
@@ -378,7 +403,7 @@ async fn handle_ns_query(
 
     // Forward to upstream
     println!("  Forwarding to upstream DNS for {} (NS)", domain);
-    match resolver.lookup(domain, RecordType::NS).await {
+    match with_timeout(resolver.lookup(domain, RecordType::NS), domain, "NS").await {
         Ok(lookup) => {
             let ttl = 300u32;
             let mut cache_entries = Vec::new();
@@ -405,6 +430,7 @@ async fn handle_ns_query(
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
+            packet.header.set_rcode(RCODE_SERVER_FAILURE);
         }
     }
 }
@@ -442,7 +468,7 @@ async fn handle_mx_query(
 
     // Forward to upstream
     println!("  Forwarding to upstream DNS for {} (MX)", domain);
-    match resolver.lookup(domain, RecordType::MX).await {
+    match with_timeout(resolver.lookup(domain, RecordType::MX), domain, "MX").await {
         Ok(lookup) => {
             let ttl = 300u32;
             let mut cache_entries = Vec::new();
@@ -477,6 +503,7 @@ async fn handle_mx_query(
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
+            packet.header.set_rcode(RCODE_SERVER_FAILURE);
         }
     }
 }
@@ -509,7 +536,7 @@ async fn handle_cname_query(
 
     // Forward to upstream
     println!("  Forwarding to upstream DNS for {} (CNAME)", domain);
-    match resolver.lookup(domain, RecordType::CNAME).await {
+    match with_timeout(resolver.lookup(domain, RecordType::CNAME), domain, "CNAME").await {
         Ok(lookup) => {
             let ttl = 300u32;
             let mut cache_entries = Vec::new();
@@ -536,6 +563,7 @@ async fn handle_cname_query(
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
+            packet.header.set_rcode(RCODE_SERVER_FAILURE);
         }
     }
 }
@@ -568,7 +596,7 @@ async fn handle_ptr_query(
 
     // Forward to upstream
     println!("  Forwarding to upstream DNS for {} (PTR)", domain);
-    match resolver.lookup(domain, RecordType::PTR).await {
+    match with_timeout(resolver.lookup(domain, RecordType::PTR), domain, "PTR").await {
         Ok(lookup) => {
             let ttl = 300u32;
             let mut cache_entries = Vec::new();
@@ -595,6 +623,7 @@ async fn handle_ptr_query(
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
+            packet.header.set_rcode(RCODE_SERVER_FAILURE);
         }
     }
 }
@@ -627,7 +656,7 @@ async fn handle_txt_query(
 
     // Forward to upstream
     println!("  Forwarding to upstream DNS for {} (TXT)", domain);
-    match resolver.lookup(domain, RecordType::TXT).await {
+    match with_timeout(resolver.lookup(domain, RecordType::TXT), domain, "TXT").await {
         Ok(lookup) => {
             let ttl = 300u32;
             let mut cache_entries = Vec::new();
@@ -636,10 +665,18 @@ async fn handle_txt_query(
                 if let Some(txt_data) = record.data()
                     && let trust_dns_resolver::proto::rr::RData::TXT(txt) = txt_data
                 {
-                    // Concatenate all text strings
+                    // Concatenate all text strings with explicit UTF-8 handling
                     let txt_string = txt
                         .iter()
-                        .map(|bytes| String::from_utf8_lossy(bytes).to_string())
+                        .map(|bytes| {
+                            String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| {
+                                eprintln!(
+                                    "Warning: Invalid UTF-8 in TXT record for {}, using replacement characters",
+                                    domain
+                                );
+                                String::from_utf8_lossy(bytes).to_string()
+                            })
+                        })
                         .collect::<Vec<String>>()
                         .join("");
 
@@ -660,6 +697,7 @@ async fn handle_txt_query(
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
+            packet.header.set_rcode(RCODE_SERVER_FAILURE);
         }
     }
 }
@@ -711,7 +749,7 @@ async fn handle_soa_query(
 
     // Forward to upstream
     println!("  Forwarding to upstream DNS for {} (SOA)", domain);
-    match resolver.lookup(domain, RecordType::SOA).await {
+    match with_timeout(resolver.lookup(domain, RecordType::SOA), domain, "SOA").await {
         Ok(lookup) => {
             let ttl = 300u32;
             let mut cache_entries = Vec::new();
@@ -766,6 +804,7 @@ async fn handle_soa_query(
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
+            packet.header.set_rcode(RCODE_SERVER_FAILURE);
         }
     }
 }

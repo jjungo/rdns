@@ -1,4 +1,60 @@
+use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
+
+#[derive(Debug, Clone)]
+pub enum DnsParseError {
+    BufferTooShort {
+        needed: usize,
+        available: usize,
+    },
+    #[allow(dead_code)]
+    InvalidPointer {
+        offset: usize,
+    },
+    LabelTooLong {
+        length: usize,
+    },
+    OffsetOutOfBounds {
+        offset: usize,
+        buffer_len: usize,
+    },
+    #[allow(dead_code)]
+    InvalidUtf8 {
+        context: String,
+    },
+}
+
+impl fmt::Display for DnsParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::BufferTooShort { needed, available } => {
+                write!(
+                    f,
+                    "Buffer too short: needed {} bytes, available {}",
+                    needed, available
+                )
+            }
+            Self::InvalidPointer { offset } => {
+                write!(f, "Invalid DNS pointer at offset {}", offset)
+            }
+            Self::LabelTooLong { length } => {
+                write!(f, "DNS label too long: {} bytes (max 63)", length)
+            }
+            Self::OffsetOutOfBounds { offset, buffer_len } => {
+                write!(
+                    f,
+                    "Offset {} out of bounds (buffer size: {})",
+                    offset, buffer_len
+                )
+            }
+            Self::InvalidUtf8 { context } => {
+                write!(f, "Invalid UTF-8 in {}", context)
+            }
+        }
+    }
+}
+
+impl std::error::Error for DnsParseError {}
 
 // DNS Query Type Constants (RFC 1035)
 pub const QTYPE_A: u16 = 1;
@@ -9,6 +65,19 @@ pub const QTYPE_PTR: u16 = 12;
 pub const QTYPE_MX: u16 = 15;
 pub const QTYPE_TXT: u16 = 16;
 pub const QTYPE_AAAA: u16 = 28;
+
+// DNS Response Codes (RFC 1035 Section 4.1.1)
+#[allow(dead_code)]
+pub const RCODE_NO_ERROR: u16 = 0;
+#[allow(dead_code)]
+pub const RCODE_FORMAT_ERROR: u16 = 1;
+pub const RCODE_SERVER_FAILURE: u16 = 2;
+#[allow(dead_code)]
+pub const RCODE_NAME_ERROR: u16 = 3;
+#[allow(dead_code)]
+pub const RCODE_NOT_IMPLEMENTED: u16 = 4;
+#[allow(dead_code)]
+pub const RCODE_REFUSED: u16 = 5;
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy)]
@@ -72,9 +141,12 @@ impl DnsHeader {
         Self::default()
     }
 
-    pub fn from_bytes(buf: &[u8]) -> Result<Self, String> {
+    pub fn from_bytes(buf: &[u8]) -> Result<Self, DnsParseError> {
         if buf.len() < 12 {
-            return Err("Buffer too short for DNS header".to_string());
+            return Err(DnsParseError::BufferTooShort {
+                needed: 12,
+                available: buf.len(),
+            });
         }
 
         Ok(DnsHeader {
@@ -105,6 +177,18 @@ impl DnsHeader {
     pub fn set_recursion_available(&mut self) {
         self.flags |= 0x0080; // Set RA bit
     }
+
+    pub fn set_rcode(&mut self, rcode: u16) {
+        // Clear existing RCODE (last 4 bits of flags)
+        self.flags &= 0xFFF0;
+        // Set new RCODE
+        self.flags |= rcode & 0x000F;
+    }
+
+    #[allow(dead_code)]
+    pub fn get_rcode(&self) -> u16 {
+        self.flags & 0x000F
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -115,11 +199,14 @@ pub struct DnsQuestion {
 }
 
 impl DnsQuestion {
-    pub fn from_bytes(buf: &[u8], offset: usize) -> Result<(Self, usize), String> {
+    pub fn from_bytes(buf: &[u8], offset: usize) -> Result<(Self, usize), DnsParseError> {
         let (name, new_offset) = parse_domain_name(buf, offset)?;
 
         if new_offset + 4 > buf.len() {
-            return Err("Buffer too short for question type and class".to_string());
+            return Err(DnsParseError::BufferTooShort {
+                needed: new_offset + 4,
+                available: buf.len(),
+            });
         }
 
         let qtype = QueryType::from(u16::from_be_bytes([buf[new_offset], buf[new_offset + 1]]));
@@ -294,7 +381,7 @@ pub struct DnsPacket {
 }
 
 impl DnsPacket {
-    pub fn from_bytes(buf: &[u8]) -> Result<Self, String> {
+    pub fn from_bytes(buf: &[u8]) -> Result<Self, DnsParseError> {
         let header = DnsHeader::from_bytes(buf)?;
 
         let mut offset = 12;
@@ -342,14 +429,17 @@ fn encode_domain_name(domain: &str) -> Vec<u8> {
     bytes
 }
 
-fn parse_domain_name(buf: &[u8], mut offset: usize) -> Result<(String, usize), String> {
+fn parse_domain_name(buf: &[u8], mut offset: usize) -> Result<(String, usize), DnsParseError> {
     let mut labels = Vec::new();
     let mut jumped = false;
     let mut jump_offset = 0;
 
     loop {
         if offset >= buf.len() {
-            return Err("Offset out of bounds".to_string());
+            return Err(DnsParseError::OffsetOutOfBounds {
+                offset,
+                buffer_len: buf.len(),
+            });
         }
 
         let len = buf[offset] as usize;
@@ -357,7 +447,10 @@ fn parse_domain_name(buf: &[u8], mut offset: usize) -> Result<(String, usize), S
         // Check for pointer (compression)
         if (len & 0xC0) == 0xC0 {
             if offset + 1 >= buf.len() {
-                return Err("Buffer too short for pointer".to_string());
+                return Err(DnsParseError::BufferTooShort {
+                    needed: offset + 2,
+                    available: buf.len(),
+                });
             }
 
             if !jumped {
@@ -376,8 +469,15 @@ fn parse_domain_name(buf: &[u8], mut offset: usize) -> Result<(String, usize), S
             break;
         }
 
+        if len > 63 {
+            return Err(DnsParseError::LabelTooLong { length: len });
+        }
+
         if offset + len > buf.len() {
-            return Err("Label length exceeds buffer".to_string());
+            return Err(DnsParseError::BufferTooShort {
+                needed: offset + len,
+                available: buf.len(),
+            });
         }
 
         let label = String::from_utf8_lossy(&buf[offset..offset + len]).to_string();
@@ -481,5 +581,161 @@ mod tests {
         // First byte should be length
         assert_eq!(answer.data[0], text.len() as u8);
         assert_eq!(answer.data.len(), text.len() + 1); // +1 for length prefix
+    }
+
+    #[test]
+    fn test_rcode_set_and_get() {
+        let mut header = DnsHeader::default();
+
+        // Initially should be RCODE_NO_ERROR (0)
+        assert_eq!(header.get_rcode(), RCODE_NO_ERROR);
+
+        // Set SERVFAIL
+        header.set_rcode(RCODE_SERVER_FAILURE);
+        assert_eq!(header.get_rcode(), RCODE_SERVER_FAILURE);
+
+        // Set NAME_ERROR
+        header.set_rcode(RCODE_NAME_ERROR);
+        assert_eq!(header.get_rcode(), RCODE_NAME_ERROR);
+
+        // Verify RCODE is properly masked (only 4 bits)
+        header.set_rcode(0x1F); // Try to set more than 4 bits
+        assert_eq!(header.get_rcode(), 0x0F); // Should be masked to 4 bits
+    }
+
+    #[test]
+    fn test_rcode_doesnt_affect_other_flags() {
+        let mut header = DnsHeader::default();
+
+        // Set QR and RA bits
+        header.set_response();
+        header.set_recursion_available();
+
+        let flags_before = header.flags;
+
+        // Set RCODE
+        header.set_rcode(RCODE_SERVER_FAILURE);
+
+        // QR and RA bits should still be set
+        assert_eq!(header.flags & 0x8000, 0x8000, "QR bit should still be set");
+        assert_eq!(header.flags & 0x0080, 0x0080, "RA bit should still be set");
+        assert_eq!(header.get_rcode(), RCODE_SERVER_FAILURE);
+
+        // Upper bits should be unchanged
+        assert_eq!(header.flags & 0xFFF0, flags_before & 0xFFF0);
+    }
+
+    #[test]
+    fn test_parse_error_buffer_too_short() {
+        let short_buf = vec![0, 1, 2, 3]; // Only 4 bytes
+        let result = DnsHeader::from_bytes(&short_buf);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            DnsParseError::BufferTooShort { needed, available } => {
+                assert_eq!(needed, 12);
+                assert_eq!(available, 4);
+            }
+            _ => panic!("Expected BufferTooShort error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_error_label_too_long() {
+        let mut buf = vec![0; 100];
+        buf[0] = 65; // Label length > 63 (max is 63)
+        let result = parse_domain_name(&buf, 0);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            DnsParseError::LabelTooLong { length } => {
+                assert_eq!(length, 65);
+            }
+            _ => panic!("Expected LabelTooLong error"),
+        }
+    }
+
+    #[test]
+    fn test_parse_error_display() {
+        let err = DnsParseError::BufferTooShort {
+            needed: 12,
+            available: 4,
+        };
+        assert_eq!(
+            err.to_string(),
+            "Buffer too short: needed 12 bytes, available 4"
+        );
+
+        let err = DnsParseError::OffsetOutOfBounds {
+            offset: 100,
+            buffer_len: 50,
+        };
+        assert_eq!(
+            err.to_string(),
+            "Offset 100 out of bounds (buffer size: 50)"
+        );
+    }
+
+    #[test]
+    fn test_all_rcode_constants() {
+        let mut header = DnsHeader::default();
+
+        // Test all RCODE constants
+        header.set_rcode(RCODE_NO_ERROR);
+        assert_eq!(header.get_rcode(), 0);
+
+        header.set_rcode(RCODE_FORMAT_ERROR);
+        assert_eq!(header.get_rcode(), 1);
+
+        header.set_rcode(RCODE_SERVER_FAILURE);
+        assert_eq!(header.get_rcode(), 2);
+
+        header.set_rcode(RCODE_NAME_ERROR);
+        assert_eq!(header.get_rcode(), 3);
+
+        header.set_rcode(RCODE_NOT_IMPLEMENTED);
+        assert_eq!(header.get_rcode(), 4);
+
+        header.set_rcode(RCODE_REFUSED);
+        assert_eq!(header.get_rcode(), 5);
+    }
+
+    #[test]
+    fn test_parse_error_invalid_pointer() {
+        let err = DnsParseError::InvalidPointer { offset: 512 };
+        assert_eq!(err.to_string(), "Invalid DNS pointer at offset 512");
+
+        // Verify the error can be cloned and debugged
+        let err_clone = err.clone();
+        assert_eq!(format!("{:?}", err_clone), "InvalidPointer { offset: 512 }");
+    }
+
+    #[test]
+    fn test_parse_error_invalid_utf8() {
+        let err = DnsParseError::InvalidUtf8 {
+            context: "TXT record".to_string(),
+        };
+        assert_eq!(err.to_string(), "Invalid UTF-8 in TXT record");
+
+        // Verify std::error::Error trait is implemented
+        let _err_trait: &dyn std::error::Error = &err;
+    }
+
+    #[test]
+    fn test_parse_error_offset_out_of_bounds() {
+        let err = DnsParseError::OffsetOutOfBounds {
+            offset: 200,
+            buffer_len: 100,
+        };
+
+        // Test that it can be used in Result context
+        let result: Result<(), DnsParseError> = Err(err.clone());
+        assert!(result.is_err());
+
+        match result {
+            Err(DnsParseError::OffsetOutOfBounds { offset, buffer_len }) => {
+                assert_eq!(offset, 200);
+                assert_eq!(buffer_len, 100);
+            }
+            _ => panic!("Expected OffsetOutOfBounds error"),
+        }
     }
 }
