@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
 use std::fs::File;
 use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 pub struct DnsStats {
     start_time: Instant,
@@ -128,16 +128,33 @@ impl DnsStats {
 
         let mut file = File::create(filename)?;
 
-        writeln!(file, "\n═══════════════════════════════════════════════════")?;
+        writeln!(
+            file,
+            "\n═══════════════════════════════════════════════════"
+        )?;
         writeln!(file, "           DNS Server Statistics")?;
         writeln!(file, "═══════════════════════════════════════════════════")?;
-        writeln!(file, "Uptime:              {}h {}m {}s", hours, minutes, seconds)?;
+        writeln!(
+            file,
+            "Uptime:              {}h {}m {}s",
+            hours, minutes, seconds
+        )?;
         writeln!(file, "Total Queries:       {}", self.get_total_queries())?;
-        writeln!(file, "Queries/sec:         {:.2}", self.get_queries_per_second())?;
-        writeln!(file, "Avg Response Time:   {:.2} ms", self.get_average_response_time_ms())?;
+        writeln!(
+            file,
+            "Queries/sec:         {:.2}",
+            self.get_queries_per_second()
+        )?;
+        writeln!(
+            file,
+            "Avg Response Time:   {:.2} ms",
+            self.get_average_response_time_ms()
+        )?;
         writeln!(file)?;
         writeln!(file, "Cache Performance:")?;
-        writeln!(file, "  Cache Hits:        {} ({:.1}%)",
+        writeln!(
+            file,
+            "  Cache Hits:        {} ({:.1}%)",
             self.get_cache_hits(),
             self.get_cache_hit_ratio()
         )?;
@@ -165,7 +182,10 @@ impl DnsStats {
                 writeln!(file, "  {:<10} {:>6} ({:>5.1}%)", name, count, percentage)?;
             }
         }
-        writeln!(file, "═══════════════════════════════════════════════════\n")?;
+        writeln!(
+            file,
+            "═══════════════════════════════════════════════════\n"
+        )?;
 
         Ok(())
     }

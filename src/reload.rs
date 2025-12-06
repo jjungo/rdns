@@ -32,10 +32,7 @@ fn run_file_watcher(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (notify_tx, notify_rx) = std::sync::mpsc::channel();
 
-    let mut watcher = RecommendedWatcher::new(
-        notify_tx,
-        NotifyConfig::default(),
-    )?;
+    let mut watcher = RecommendedWatcher::new(notify_tx, NotifyConfig::default())?;
 
     // Convert to absolute path so it matches the event paths
     let path = std::fs::canonicalize(Path::new(config_path))?;
@@ -56,20 +53,34 @@ fn run_file_watcher(
                 if matches!(
                     kind,
                     notify::EventKind::Modify(notify::event::ModifyKind::Data(_))
-                ) && paths.iter().any(|p| p == &path) {
-                    println!("\n[CONFIG RELOAD] File modification detected: {}", config_path);
+                ) && paths.iter().any(|p| p == &path)
+                {
+                    println!(
+                        "\n[CONFIG RELOAD] File modification detected: {}",
+                        config_path
+                    );
                     println!("[CONFIG RELOAD] Event type: {:?}", kind);
 
                     match load_and_validate_config(config_path) {
                         Ok(new_config) => {
-                            println!("[CONFIG RELOAD] Validation successful, applying new configuration...");
-                            if let Err(e) = tx.blocking_send(ReloadMessage::ConfigChanged(new_config)) {
-                                eprintln!("[CONFIG RELOAD ERROR] Failed to send reload message: {}", e);
+                            println!(
+                                "[CONFIG RELOAD] Validation successful, applying new configuration..."
+                            );
+                            if let Err(e) =
+                                tx.blocking_send(ReloadMessage::ConfigChanged(new_config))
+                            {
+                                eprintln!(
+                                    "[CONFIG RELOAD ERROR] Failed to send reload message: {}",
+                                    e
+                                );
                                 break;
                             }
                         }
                         Err(e) => {
-                            eprintln!("[CONFIG RELOAD ERROR] Failed to reload config (keeping old config): {}", e);
+                            eprintln!(
+                                "[CONFIG RELOAD ERROR] Failed to reload config (keeping old config): {}",
+                                e
+                            );
                         }
                     }
                 }
@@ -122,7 +133,10 @@ fn validate_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate DNS records
     let records = config.parse_records()?;
-    println!("[CONFIG RELOAD] Found {} valid DNS record(s)", records.len());
+    println!(
+        "[CONFIG RELOAD] Found {} valid DNS record(s)",
+        records.len()
+    );
 
     Ok(())
 }
@@ -144,16 +158,25 @@ pub async fn apply_config_update(
     println!("       Configuration Reloaded Successfully!");
     println!("═══════════════════════════════════════════════════");
     println!("Server:");
-    println!("  Listen Address:      {}", new_config.server.listen_address);
+    println!(
+        "  Listen Address:      {}",
+        new_config.server.listen_address
+    );
     println!("  Listen Port:         {}", new_config.server.listen_port);
     println!();
     println!("Cache:");
     println!("  Max Entries:         {}", new_config.cache.max_entries);
-    println!("  Cleanup Interval:    {}s", new_config.cache.cleanup_interval);
+    println!(
+        "  Cleanup Interval:    {}s",
+        new_config.cache.cleanup_interval
+    );
     println!();
     println!("Statistics:");
     println!("  File Path:           {}", new_config.stats.file_path);
-    println!("  Update Interval:     {}s", new_config.stats.update_interval);
+    println!(
+        "  Update Interval:     {}s",
+        new_config.stats.update_interval
+    );
     println!();
     println!("DNS:");
     println!("  Default TTL:         {}s", new_config.dns.default_ttl);

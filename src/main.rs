@@ -1,12 +1,12 @@
-mod dns;
-mod server;
 mod cache;
-mod stats;
 mod config;
+mod dns;
 mod reload;
+mod server;
+mod stats;
 
-use server::DnsServer;
 use config::Config;
+use server::DnsServer;
 use std::env;
 
 #[tokio::main]

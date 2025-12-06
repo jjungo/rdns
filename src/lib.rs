@@ -1,5 +1,5 @@
-pub mod dns;
 pub mod cache;
-pub mod stats;
 pub mod config;
+pub mod dns;
 pub mod server;
+pub mod stats;

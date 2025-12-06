@@ -59,9 +59,7 @@ impl Config {
                 file_path: "dns_stats.txt".to_string(),
                 update_interval: 60,
             },
-            dns: DnsConfig {
-                default_ttl: 300,
-            },
+            dns: DnsConfig { default_ttl: 300 },
             records: HashMap::new(),
         }
     }

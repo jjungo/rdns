@@ -46,8 +46,7 @@ impl From<QueryType> for u16 {
     }
 }
 
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct DnsHeader {
     pub id: u16,
     pub flags: u16,

@@ -19,7 +19,10 @@ pub enum RecordData {
         minimum: u32,
     },
     PTR(String),
-    MX { priority: u16, exchange: String },
+    MX {
+        priority: u16,
+        exchange: String,
+    },
     TXT(String),
 }
 
@@ -96,7 +99,8 @@ impl DnsCache {
             // If still at capacity, remove the key with shortest average TTL
             let total_entries: usize = self.cache.values().map(|v| v.len()).sum();
             if total_entries >= self.max_entries
-                && let Some(key_to_remove) = self.cache
+                && let Some(key_to_remove) = self
+                    .cache
                     .iter()
                     .min_by_key(|(_, entries)| {
                         let avg_ttl: u32 = entries.iter().map(|e| e.remaining_ttl()).sum::<u32>()
@@ -104,9 +108,9 @@ impl DnsCache {
                         avg_ttl
                     })
                     .map(|(k, _)| k.clone())
-                {
-                    self.cache.remove(&key_to_remove);
-                }
+            {
+                self.cache.remove(&key_to_remove);
+            }
         }
 
         let key = (domain, qtype);
@@ -151,7 +155,10 @@ mod tests {
     #[test]
     fn test_cache_insert_and_get() {
         let mut cache = DnsCache::new(10);
-        let entry = vec![CacheEntry::new(RecordData::A(Ipv4Addr::new(1, 1, 1, 1)), 300)];
+        let entry = vec![CacheEntry::new(
+            RecordData::A(Ipv4Addr::new(1, 1, 1, 1)),
+            300,
+        )];
         cache.insert("test.com".to_string(), 1, entry);
 
         let result = cache.get("test.com", 1);
@@ -180,15 +187,24 @@ mod tests {
     #[test]
     fn test_cache_eviction() {
         let mut cache = DnsCache::new(2);
-        let entry1 = vec![CacheEntry::new(RecordData::A(Ipv4Addr::new(1, 1, 1, 1)), 300)];
-        let entry2 = vec![CacheEntry::new(RecordData::A(Ipv4Addr::new(2, 2, 2, 2)), 300)];
+        let entry1 = vec![CacheEntry::new(
+            RecordData::A(Ipv4Addr::new(1, 1, 1, 1)),
+            300,
+        )];
+        let entry2 = vec![CacheEntry::new(
+            RecordData::A(Ipv4Addr::new(2, 2, 2, 2)),
+            300,
+        )];
         cache.insert("test1.com".to_string(), 1, entry1);
         cache.insert("test2.com".to_string(), 1, entry2);
 
         assert_eq!(cache.len(), 2);
 
         // Adding third entry should evict one
-        let entry3 = vec![CacheEntry::new(RecordData::A(Ipv4Addr::new(3, 3, 3, 3)), 300)];
+        let entry3 = vec![CacheEntry::new(
+            RecordData::A(Ipv4Addr::new(3, 3, 3, 3)),
+            300,
+        )];
         cache.insert("test3.com".to_string(), 1, entry3);
 
         assert_eq!(cache.len(), 2);

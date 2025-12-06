@@ -1,6 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use rdns::dns::{DnsPacket, DnsHeader, DnsQuestion, QueryType, DnsAnswer};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use rdns::cache::{DnsCache, RecordData};
+use rdns::dns::{DnsAnswer, DnsHeader, DnsPacket, DnsQuestion, QueryType};
 use std::net::Ipv4Addr;
 
 // Benchmark DNS packet parsing
@@ -35,9 +35,7 @@ fn bench_dns_packet_parsing(c: &mut Criterion) {
     ]);
 
     group.bench_function("parse_dns_query", |b| {
-        b.iter(|| {
-            DnsPacket::from_bytes(black_box(&query)).unwrap()
-        })
+        b.iter(|| DnsPacket::from_bytes(black_box(&query)).unwrap())
     });
 
     group.finish();

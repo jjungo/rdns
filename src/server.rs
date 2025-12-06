@@ -1,7 +1,7 @@
-use crate::dns::{DnsAnswer, DnsPacket, QueryType};
-use crate::cache::{DnsCache, CacheEntry, RecordData};
-use crate::stats::DnsStats;
+use crate::cache::{CacheEntry, DnsCache, RecordData};
 use crate::config::Config;
+use crate::dns::{DnsAnswer, DnsPacket, QueryType};
+use crate::stats::DnsStats;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -32,10 +32,8 @@ impl DnsServer {
         let cache = DnsCache::new(config.cache.max_entries);
 
         // Create resolver with system configuration
-        let resolver = TokioAsyncResolver::tokio(
-            ResolverConfig::default(),
-            ResolverOpts::default(),
-        );
+        let resolver =
+            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
         Ok(DnsServer {
             records: Arc::new(RwLock::new(records)),
@@ -63,7 +61,8 @@ impl DnsServer {
         let cache_for_cleanup = self.cache.clone();
         let cleanup_interval = self.config.cache.cleanup_interval;
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(cleanup_interval));
+            let mut interval =
+                tokio::time::interval(tokio::time::Duration::from_secs(cleanup_interval));
             loop {
                 interval.tick().await;
                 let mut cache = cache_for_cleanup.write().await;
@@ -71,7 +70,12 @@ impl DnsServer {
                 cache.cleanup_expired();
                 let after = cache.len();
                 if before != after {
-                    println!("Cache cleanup: removed {} expired entries ({} -> {})", before - after, before, after);
+                    println!(
+                        "Cache cleanup: removed {} expired entries ({} -> {})",
+                        before - after,
+                        before,
+                        after
+                    );
                 }
             }
         });
@@ -82,7 +86,8 @@ impl DnsServer {
         let stats_interval = self.config.stats.update_interval;
         let stats_file = self.config.stats.file_path.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(stats_interval));
+            let mut interval =
+                tokio::time::interval(tokio::time::Duration::from_secs(stats_interval));
             loop {
                 interval.tick().await;
                 let cache_size = cache_for_stats.read().await.len();
@@ -106,7 +111,17 @@ impl DnsServer {
 
             tokio::spawn(async move {
                 let start = Instant::now();
-                if let Err(e) = handle_query(request_data, src, socket, records, cache, resolver, stats.clone()).await {
+                if let Err(e) = handle_query(
+                    request_data,
+                    src,
+                    socket,
+                    records,
+                    cache,
+                    resolver,
+                    stats.clone(),
+                )
+                .await
+                {
                     eprintln!("Error handling query from {}: {}", src, e);
                 }
                 stats.record_response_time(start.elapsed());
@@ -141,14 +156,19 @@ async fn handle_query(
         // Record query by type
         stats.record_query(u16::from(question.qtype));
 
-        println!(
-            "  Question: {} (type: {:?})",
-            question.name, question.qtype
-        );
+        println!("  Question: {} (type: {:?})", question.name, question.qtype);
 
         match question.qtype {
             QueryType::A => {
-                handle_a_query(&question.name, &records, &cache, &resolver, &stats, &mut packet).await;
+                handle_a_query(
+                    &question.name,
+                    &records,
+                    &cache,
+                    &resolver,
+                    &stats,
+                    &mut packet,
+                )
+                .await;
             }
             QueryType::AAAA => {
                 handle_aaaa_query(&question.name, &cache, &resolver, &stats, &mut packet).await;
@@ -231,7 +251,10 @@ async fn handle_a_query(
 
             for ip in lookup.iter() {
                 if let std::net::IpAddr::V4(ipv4) = ip {
-                    println!("  Answer (upstream): {} -> {} (TTL: {}s)", domain, ipv4, ttl);
+                    println!(
+                        "  Answer (upstream): {} -> {} (TTL: {}s)",
+                        domain, ipv4, ttl
+                    );
 
                     cache_entries.push(CacheEntry::new(RecordData::A(ipv4), ttl));
 
@@ -288,7 +311,10 @@ async fn handle_aaaa_query(
 
             for ip in lookup.iter() {
                 if let std::net::IpAddr::V6(ipv6) = ip {
-                    println!("  Answer (upstream): {} -> {} (TTL: {}s)", domain, ipv6, ttl);
+                    println!(
+                        "  Answer (upstream): {} -> {} (TTL: {}s)",
+                        domain, ipv6, ttl
+                    );
 
                     cache_entries.push(CacheEntry::new(RecordData::AAAA(ipv6), ttl));
 
@@ -346,9 +372,13 @@ async fn handle_ns_query(
 
             for record in lookup.record_iter() {
                 if let Some(ns_data) = record.data()
-                    && let trust_dns_resolver::proto::rr::RData::NS(ns) = ns_data {
+                    && let trust_dns_resolver::proto::rr::RData::NS(ns) = ns_data
+                {
                     let ns_name = ns.to_string();
-                    println!("  Answer (upstream): {} NS -> {} (TTL: {}s)", domain, ns_name, ttl);
+                    println!(
+                        "  Answer (upstream): {} NS -> {} (TTL: {}s)",
+                        domain, ns_name, ttl
+                    );
 
                     cache_entries.push(CacheEntry::new(RecordData::NS(ns_name.clone()), ttl));
 
@@ -383,10 +413,18 @@ async fn handle_mx_query(
     if let Some(cached_entries) = cache_guard.get(domain, 15) {
         stats.record_cache_hit();
         for entry in cached_entries {
-            if let RecordData::MX { priority, ref exchange } = entry.data {
+            if let RecordData::MX {
+                priority,
+                ref exchange,
+            } = entry.data
+            {
                 let ttl = entry.remaining_ttl();
-                println!("  Answer (cache): {} MX -> {} {} (TTL: {}s)", domain, priority, exchange, ttl);
-                let answer = DnsAnswer::new_mx_record(domain.to_string(), ttl, priority, exchange.clone());
+                println!(
+                    "  Answer (cache): {} MX -> {} {} (TTL: {}s)",
+                    domain, priority, exchange, ttl
+                );
+                let answer =
+                    DnsAnswer::new_mx_record(domain.to_string(), ttl, priority, exchange.clone());
                 packet.answers.push(answer);
                 packet.header.answers += 1;
             }
@@ -406,17 +444,25 @@ async fn handle_mx_query(
 
             for record in lookup.record_iter() {
                 if let Some(mx_data) = record.data()
-                    && let trust_dns_resolver::proto::rr::RData::MX(mx) = mx_data {
+                    && let trust_dns_resolver::proto::rr::RData::MX(mx) = mx_data
+                {
                     let priority = mx.preference();
                     let exchange = mx.exchange().to_string();
-                    println!("  Answer (upstream): {} MX -> {} {} (TTL: {}s)", domain, priority, exchange, ttl);
+                    println!(
+                        "  Answer (upstream): {} MX -> {} {} (TTL: {}s)",
+                        domain, priority, exchange, ttl
+                    );
 
                     cache_entries.push(CacheEntry::new(
-                        RecordData::MX { priority, exchange: exchange.clone() },
-                        ttl
+                        RecordData::MX {
+                            priority,
+                            exchange: exchange.clone(),
+                        },
+                        ttl,
                     ));
 
-                    let answer = DnsAnswer::new_mx_record(domain.to_string(), ttl, priority, exchange);
+                    let answer =
+                        DnsAnswer::new_mx_record(domain.to_string(), ttl, priority, exchange);
                     packet.answers.push(answer);
                     packet.header.answers += 1;
                 }
@@ -449,7 +495,10 @@ async fn handle_cname_query(
         for entry in cached_entries {
             if let RecordData::CNAME(ref cname) = entry.data {
                 let ttl = entry.remaining_ttl();
-                println!("  Answer (cache): {} CNAME -> {} (TTL: {}s)", domain, cname, ttl);
+                println!(
+                    "  Answer (cache): {} CNAME -> {} (TTL: {}s)",
+                    domain, cname, ttl
+                );
                 let answer = DnsAnswer::new_cname_record(domain.to_string(), ttl, cname.clone());
                 packet.answers.push(answer);
                 packet.header.answers += 1;
@@ -470,16 +519,20 @@ async fn handle_cname_query(
 
             for record in lookup.record_iter() {
                 if let Some(cname_data) = record.data()
-                    && let trust_dns_resolver::proto::rr::RData::CNAME(cname) = cname_data {
-                        let cname_name = cname.to_string();
-                        println!("  Answer (upstream): {} CNAME -> {} (TTL: {}s)", domain, cname_name, ttl);
+                    && let trust_dns_resolver::proto::rr::RData::CNAME(cname) = cname_data
+                {
+                    let cname_name = cname.to_string();
+                    println!(
+                        "  Answer (upstream): {} CNAME -> {} (TTL: {}s)",
+                        domain, cname_name, ttl
+                    );
 
-                        cache_entries.push(CacheEntry::new(RecordData::CNAME(cname_name.clone()), ttl));
+                    cache_entries.push(CacheEntry::new(RecordData::CNAME(cname_name.clone()), ttl));
 
-                        let answer = DnsAnswer::new_cname_record(domain.to_string(), ttl, cname_name);
-                        packet.answers.push(answer);
-                        packet.header.answers += 1;
-                    }
+                    let answer = DnsAnswer::new_cname_record(domain.to_string(), ttl, cname_name);
+                    packet.answers.push(answer);
+                    packet.header.answers += 1;
+                }
             }
 
             if !cache_entries.is_empty() {
@@ -509,7 +562,10 @@ async fn handle_ptr_query(
         for entry in cached_entries {
             if let RecordData::PTR(ref ptr) = entry.data {
                 let ttl = entry.remaining_ttl();
-                println!("  Answer (cache): {} PTR -> {} (TTL: {}s)", domain, ptr, ttl);
+                println!(
+                    "  Answer (cache): {} PTR -> {} (TTL: {}s)",
+                    domain, ptr, ttl
+                );
                 let answer = DnsAnswer::new_ptr_record(domain.to_string(), ttl, ptr.clone());
                 packet.answers.push(answer);
                 packet.header.answers += 1;
@@ -530,16 +586,20 @@ async fn handle_ptr_query(
 
             for record in lookup.record_iter() {
                 if let Some(ptr_data) = record.data()
-                    && let trust_dns_resolver::proto::rr::RData::PTR(ptr) = ptr_data {
-                        let ptr_name = ptr.to_string();
-                        println!("  Answer (upstream): {} PTR -> {} (TTL: {}s)", domain, ptr_name, ttl);
+                    && let trust_dns_resolver::proto::rr::RData::PTR(ptr) = ptr_data
+                {
+                    let ptr_name = ptr.to_string();
+                    println!(
+                        "  Answer (upstream): {} PTR -> {} (TTL: {}s)",
+                        domain, ptr_name, ttl
+                    );
 
-                        cache_entries.push(CacheEntry::new(RecordData::PTR(ptr_name.clone()), ttl));
+                    cache_entries.push(CacheEntry::new(RecordData::PTR(ptr_name.clone()), ttl));
 
-                        let answer = DnsAnswer::new_ptr_record(domain.to_string(), ttl, ptr_name);
-                        packet.answers.push(answer);
-                        packet.header.answers += 1;
-                    }
+                    let answer = DnsAnswer::new_ptr_record(domain.to_string(), ttl, ptr_name);
+                    packet.answers.push(answer);
+                    packet.header.answers += 1;
+                }
             }
 
             if !cache_entries.is_empty() {
@@ -569,7 +629,10 @@ async fn handle_txt_query(
         for entry in cached_entries {
             if let RecordData::TXT(ref txt) = entry.data {
                 let ttl = entry.remaining_ttl();
-                println!("  Answer (cache): {} TXT -> \"{}\" (TTL: {}s)", domain, txt, ttl);
+                println!(
+                    "  Answer (cache): {} TXT -> \"{}\" (TTL: {}s)",
+                    domain, txt, ttl
+                );
                 let answer = DnsAnswer::new_txt_record(domain.to_string(), ttl, txt.clone());
                 packet.answers.push(answer);
                 packet.header.answers += 1;
@@ -590,21 +653,26 @@ async fn handle_txt_query(
 
             for record in lookup.record_iter() {
                 if let Some(txt_data) = record.data()
-                    && let trust_dns_resolver::proto::rr::RData::TXT(txt) = txt_data {
-                        // Concatenate all text strings
-                        let txt_string = txt.iter()
-                            .map(|bytes| String::from_utf8_lossy(bytes).to_string())
-                            .collect::<Vec<String>>()
-                            .join("");
-                        
-                        println!("  Answer (upstream): {} TXT -> \"{}\" (TTL: {}s)", domain, txt_string, ttl);
+                    && let trust_dns_resolver::proto::rr::RData::TXT(txt) = txt_data
+                {
+                    // Concatenate all text strings
+                    let txt_string = txt
+                        .iter()
+                        .map(|bytes| String::from_utf8_lossy(bytes).to_string())
+                        .collect::<Vec<String>>()
+                        .join("");
 
-                        cache_entries.push(CacheEntry::new(RecordData::TXT(txt_string.clone()), ttl));
+                    println!(
+                        "  Answer (upstream): {} TXT -> \"{}\" (TTL: {}s)",
+                        domain, txt_string, ttl
+                    );
 
-                        let answer = DnsAnswer::new_txt_record(domain.to_string(), ttl, txt_string);
-                        packet.answers.push(answer);
-                        packet.header.answers += 1;
-                    }
+                    cache_entries.push(CacheEntry::new(RecordData::TXT(txt_string.clone()), ttl));
+
+                    let answer = DnsAnswer::new_txt_record(domain.to_string(), ttl, txt_string);
+                    packet.answers.push(answer);
+                    packet.header.answers += 1;
+                }
             }
 
             if !cache_entries.is_empty() {
@@ -632,12 +700,31 @@ async fn handle_soa_query(
     if let Some(cached_entries) = cache_guard.get(domain, 6) {
         stats.record_cache_hit();
         for entry in cached_entries {
-            if let RecordData::SOA { ref mname, ref rname, serial, refresh, retry, expire, minimum } = entry.data {
+            if let RecordData::SOA {
+                ref mname,
+                ref rname,
+                serial,
+                refresh,
+                retry,
+                expire,
+                minimum,
+            } = entry.data
+            {
                 let ttl = entry.remaining_ttl();
-                println!("  Answer (cache): {} SOA -> {} {} (TTL: {}s)", domain, mname, rname, ttl);
+                println!(
+                    "  Answer (cache): {} SOA -> {} {} (TTL: {}s)",
+                    domain, mname, rname, ttl
+                );
                 let answer = DnsAnswer::new_soa_record(
-                    domain.to_string(), ttl, mname.clone(), rname.clone(),
-                    serial, refresh, retry, expire, minimum
+                    domain.to_string(),
+                    ttl,
+                    mname.clone(),
+                    rname.clone(),
+                    serial,
+                    refresh,
+                    retry,
+                    expire,
+                    minimum,
                 );
                 packet.answers.push(answer);
                 packet.header.answers += 1;
@@ -658,37 +745,48 @@ async fn handle_soa_query(
 
             for record in lookup.record_iter() {
                 if let Some(soa_data) = record.data()
-                    && let trust_dns_resolver::proto::rr::RData::SOA(soa) = soa_data {
-                        let mname = soa.mname().to_string();
-                        let rname = soa.rname().to_string();
-                        let serial = soa.serial();
-                        let refresh = soa.refresh() as u32;
-                        let retry = soa.retry() as u32;
-                        let expire = soa.expire() as u32;
-                        let minimum = soa.minimum();
+                    && let trust_dns_resolver::proto::rr::RData::SOA(soa) = soa_data
+                {
+                    let mname = soa.mname().to_string();
+                    let rname = soa.rname().to_string();
+                    let serial = soa.serial();
+                    let refresh = soa.refresh() as u32;
+                    let retry = soa.retry() as u32;
+                    let expire = soa.expire() as u32;
+                    let minimum = soa.minimum();
 
-                        println!("  Answer (upstream): {} SOA -> {} {} (TTL: {}s)", domain, mname, rname, ttl);
+                    println!(
+                        "  Answer (upstream): {} SOA -> {} {} (TTL: {}s)",
+                        domain, mname, rname, ttl
+                    );
 
-                        cache_entries.push(CacheEntry::new(
-                            RecordData::SOA {
-                                mname: mname.clone(),
-                                rname: rname.clone(),
-                                serial,
-                                refresh,
-                                retry,
-                                expire,
-                                minimum,
-                            },
-                            ttl
-                        ));
+                    cache_entries.push(CacheEntry::new(
+                        RecordData::SOA {
+                            mname: mname.clone(),
+                            rname: rname.clone(),
+                            serial,
+                            refresh,
+                            retry,
+                            expire,
+                            minimum,
+                        },
+                        ttl,
+                    ));
 
-                        let answer = DnsAnswer::new_soa_record(
-                            domain.to_string(), ttl, mname, rname,
-                            serial, refresh, retry, expire, minimum
-                        );
-                        packet.answers.push(answer);
-                        packet.header.answers += 1;
-                    }
+                    let answer = DnsAnswer::new_soa_record(
+                        domain.to_string(),
+                        ttl,
+                        mname,
+                        rname,
+                        serial,
+                        refresh,
+                        retry,
+                        expire,
+                        minimum,
+                    );
+                    packet.answers.push(answer);
+                    packet.header.answers += 1;
+                }
             }
 
             if !cache_entries.is_empty() {
