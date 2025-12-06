@@ -1,0 +1,30 @@
+# rdns DNS Server Configuration
+
+[server]
+# Address to listen on (IPv4)
+listen_address = "127.0.0.1"
+# Port to listen on (53 for standard DNS, requires root/sudo)
+listen_port = 53
+
+[cache]
+# Maximum number of cache entries
+max_entries = 1000
+# Cache cleanup interval in seconds
+cleanup_interval = 60
+
+[stats]
+# Stats file path
+file_path = "dns_stats.txt"
+# Stats update interval in seconds
+update_interval = 60
+
+[dns]
+# Default TTL for responses in seconds
+default_ttl = 300
+
+# Static DNS records (optional)
+# Format: domain = "ip_address"
+[records]
+"example.com" = "93.184.216.34"
+"localhost" = "127.0.0.1"
+"test.local" = "192.168.1.100"
