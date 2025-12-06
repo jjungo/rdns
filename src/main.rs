@@ -32,29 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Print applied configuration
-    println!("\n═══════════════════════════════════════════════════");
-    println!("           DNS Server Configuration");
-    println!("═══════════════════════════════════════════════════");
-    println!("Server:");
-    println!("  Listen Address:      {}", config.server.listen_address);
-    println!("  Listen Port:         {}", config.server.listen_port);
-    println!();
-    println!("Cache:");
-    println!("  Max Entries:         {}", config.cache.max_entries);
-    println!("  Cleanup Interval:    {}s", config.cache.cleanup_interval);
-    println!();
-    println!("Statistics:");
-    println!("  File Path:           {}", config.stats.file_path);
-    println!("  Update Interval:     {}s", config.stats.update_interval);
-    println!();
-    println!("DNS:");
-    println!("  Default TTL:         {}s", config.dns.default_ttl);
-    println!();
-    println!("Static Records:        {}", config.records.len());
-    for (domain, ip) in &config.records {
-        println!("  {} -> {}", domain, ip);
-    }
-    println!("═══════════════════════════════════════════════════\n");
+    config.display();
 
     let addr = config.listen_addr();
     println!("Starting DNS server on {}", addr);

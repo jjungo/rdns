@@ -154,38 +154,8 @@ pub async fn apply_config_update(
     records_guard.extend(new_records.clone());
     drop(records_guard);
 
-    println!("\n═══════════════════════════════════════════════════");
-    println!("       Configuration Reloaded Successfully!");
-    println!("═══════════════════════════════════════════════════");
-    println!("Server:");
-    println!(
-        "  Listen Address:      {}",
-        new_config.server.listen_address
-    );
-    println!("  Listen Port:         {}", new_config.server.listen_port);
-    println!();
-    println!("Cache:");
-    println!("  Max Entries:         {}", new_config.cache.max_entries);
-    println!(
-        "  Cleanup Interval:    {}s",
-        new_config.cache.cleanup_interval
-    );
-    println!();
-    println!("Statistics:");
-    println!("  File Path:           {}", new_config.stats.file_path);
-    println!(
-        "  Update Interval:     {}s",
-        new_config.stats.update_interval
-    );
-    println!();
-    println!("DNS:");
-    println!("  Default TTL:         {}s", new_config.dns.default_ttl);
-    println!();
-    println!("Static Records:        {}", new_records.len());
-    for (domain, ip) in &new_records {
-        println!("  {} -> {}", domain, ip);
-    }
-    println!("═══════════════════════════════════════════════════\n");
+    println!("\n[CONFIG RELOAD] Configuration Reloaded Successfully!");
+    new_config.display();
 
     Ok(())
 }

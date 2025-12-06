@@ -1,6 +1,9 @@
 use crate::cache::{CacheEntry, DnsCache, RecordData};
 use crate::config::Config;
-use crate::dns::{DnsAnswer, DnsPacket, QueryType};
+use crate::dns::{
+    DnsAnswer, DnsPacket, QTYPE_A, QTYPE_AAAA, QTYPE_CNAME, QTYPE_MX, QTYPE_NS, QTYPE_PTR,
+    QTYPE_SOA, QTYPE_TXT, QueryType,
+};
 use crate::stats::DnsStats;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -255,7 +258,7 @@ async fn handle_a_query(
     drop(records_guard);
 
     // Check cache
-    if let Some(cached_entries) = check_cache(domain, 1, cache, stats).await {
+    if let Some(cached_entries) = check_cache(domain, QTYPE_A, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::A(ip) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -291,7 +294,7 @@ async fn handle_a_query(
             }
 
             // Cache the results
-            insert_cache(domain.to_string(), 1, cache_entries, cache).await;
+            insert_cache(domain.to_string(), QTYPE_A, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -307,7 +310,7 @@ async fn handle_aaaa_query(
     packet: &mut DnsPacket,
 ) {
     // Check cache
-    if let Some(cached_entries) = check_cache(domain, 28, cache, stats).await {
+    if let Some(cached_entries) = check_cache(domain, QTYPE_AAAA, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::AAAA(ip) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -342,7 +345,7 @@ async fn handle_aaaa_query(
                 }
             }
 
-            insert_cache(domain.to_string(), 28, cache_entries, cache).await;
+            insert_cache(domain.to_string(), QTYPE_AAAA, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -360,7 +363,7 @@ async fn handle_ns_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    if let Some(cached_entries) = check_cache(domain, 2, cache, stats).await {
+    if let Some(cached_entries) = check_cache(domain, QTYPE_NS, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::NS(ref ns) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -398,7 +401,7 @@ async fn handle_ns_query(
                 }
             }
 
-            insert_cache(domain.to_string(), 2, cache_entries, cache).await;
+            insert_cache(domain.to_string(), QTYPE_NS, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -416,7 +419,7 @@ async fn handle_mx_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    if let Some(cached_entries) = check_cache(domain, 15, cache, stats).await {
+    if let Some(cached_entries) = check_cache(domain, QTYPE_MX, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::MX {
                 priority,
@@ -470,7 +473,7 @@ async fn handle_mx_query(
                 }
             }
 
-            insert_cache(domain.to_string(), 15, cache_entries, cache).await;
+            insert_cache(domain.to_string(), QTYPE_MX, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -488,7 +491,7 @@ async fn handle_cname_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    if let Some(cached_entries) = check_cache(domain, 5, cache, stats).await {
+    if let Some(cached_entries) = check_cache(domain, QTYPE_CNAME, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::CNAME(ref cname) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -529,7 +532,7 @@ async fn handle_cname_query(
                 }
             }
 
-            insert_cache(domain.to_string(), 5, cache_entries, cache).await;
+            insert_cache(domain.to_string(), QTYPE_CNAME, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -547,7 +550,7 @@ async fn handle_ptr_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    if let Some(cached_entries) = check_cache(domain, 12, cache, stats).await {
+    if let Some(cached_entries) = check_cache(domain, QTYPE_PTR, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::PTR(ref ptr) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -588,7 +591,7 @@ async fn handle_ptr_query(
                 }
             }
 
-            insert_cache(domain.to_string(), 12, cache_entries, cache).await;
+            insert_cache(domain.to_string(), QTYPE_PTR, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -606,7 +609,7 @@ async fn handle_txt_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    if let Some(cached_entries) = check_cache(domain, 16, cache, stats).await {
+    if let Some(cached_entries) = check_cache(domain, QTYPE_TXT, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::TXT(ref txt) = entry.data {
                 let ttl = entry.remaining_ttl();
@@ -653,7 +656,7 @@ async fn handle_txt_query(
                 }
             }
 
-            insert_cache(domain.to_string(), 16, cache_entries, cache).await;
+            insert_cache(domain.to_string(), QTYPE_TXT, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);
@@ -671,7 +674,7 @@ async fn handle_soa_query(
     use trust_dns_resolver::proto::rr::RecordType;
 
     // Check cache
-    if let Some(cached_entries) = check_cache(domain, 6, cache, stats).await {
+    if let Some(cached_entries) = check_cache(domain, QTYPE_SOA, cache, stats).await {
         for entry in cached_entries {
             if let RecordData::SOA {
                 ref mname,
@@ -759,7 +762,7 @@ async fn handle_soa_query(
                 }
             }
 
-            insert_cache(domain.to_string(), 6, cache_entries, cache).await;
+            insert_cache(domain.to_string(), QTYPE_SOA, cache_entries, cache).await;
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);

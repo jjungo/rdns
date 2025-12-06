@@ -76,4 +76,88 @@ impl Config {
     pub fn listen_addr(&self) -> String {
         format!("{}:{}", self.server.listen_address, self.server.listen_port)
     }
+
+    /// Display configuration in a formatted table
+    pub fn display(&self) {
+        let records_count = self.records.len();
+
+        println!("\n═══════════════════════════════════════════════════");
+        println!("           DNS Server Configuration");
+        println!("═══════════════════════════════════════════════════");
+        println!("Server:");
+        println!("  Listen Address:      {}", self.server.listen_address);
+        println!("  Listen Port:         {}", self.server.listen_port);
+        println!();
+        println!("Cache:");
+        println!("  Max Entries:         {}", self.cache.max_entries);
+        println!("  Cleanup Interval:    {}s", self.cache.cleanup_interval);
+        println!();
+        println!("Statistics:");
+        println!("  File Path:           {}", self.stats.file_path);
+        println!("  Update Interval:     {}s", self.stats.update_interval);
+        println!();
+        println!("DNS:");
+        println!("  Default TTL:         {}s", self.dns.default_ttl);
+        println!();
+        println!("Static Records:        {}", records_count);
+        for (domain, ip) in &self.records {
+            println!("  {} -> {}", domain, ip);
+        }
+        println!("═══════════════════════════════════════════════════\n");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = Config::default_config();
+        assert_eq!(config.server.listen_address, "127.0.0.1");
+        assert_eq!(config.server.listen_port, 9053);
+        assert_eq!(config.cache.max_entries, 1000);
+        assert_eq!(config.cache.cleanup_interval, 60);
+        assert_eq!(config.dns.default_ttl, 300);
+        assert_eq!(config.records.len(), 0);
+    }
+
+    #[test]
+    fn test_listen_addr() {
+        let config = Config::default_config();
+        assert_eq!(config.listen_addr(), "127.0.0.1:9053");
+    }
+
+    #[test]
+    fn test_parse_records_valid() {
+        let mut config = Config::default_config();
+        config
+            .records
+            .insert("example.com".to_string(), "1.2.3.4".to_string());
+        config
+            .records
+            .insert("test.com".to_string(), "5.6.7.8".to_string());
+
+        let parsed = config.parse_records().unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed.get("example.com"), Some(&Ipv4Addr::new(1, 2, 3, 4)));
+        assert_eq!(parsed.get("test.com"), Some(&Ipv4Addr::new(5, 6, 7, 8)));
+    }
+
+    #[test]
+    fn test_parse_records_invalid_ip() {
+        let mut config = Config::default_config();
+        config
+            .records
+            .insert("example.com".to_string(), "invalid".to_string());
+
+        assert!(config.parse_records().is_err());
+    }
+
+    #[test]
+    fn test_parse_records_empty() {
+        let config = Config::default_config();
+        let parsed = config.parse_records().unwrap();
+        assert_eq!(parsed.len(), 0);
+    }
 }

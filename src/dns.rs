@@ -1,5 +1,15 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 
+// DNS Query Type Constants (RFC 1035)
+pub const QTYPE_A: u16 = 1;
+pub const QTYPE_NS: u16 = 2;
+pub const QTYPE_CNAME: u16 = 5;
+pub const QTYPE_SOA: u16 = 6;
+pub const QTYPE_PTR: u16 = 12;
+pub const QTYPE_MX: u16 = 15;
+pub const QTYPE_TXT: u16 = 16;
+pub const QTYPE_AAAA: u16 = 28;
+
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy)]
 pub enum QueryType {
@@ -17,14 +27,14 @@ pub enum QueryType {
 impl From<u16> for QueryType {
     fn from(num: u16) -> Self {
         match num {
-            1 => QueryType::A,
-            2 => QueryType::NS,
-            5 => QueryType::CNAME,
-            6 => QueryType::SOA,
-            12 => QueryType::PTR,
-            15 => QueryType::MX,
-            16 => QueryType::TXT,
-            28 => QueryType::AAAA,
+            QTYPE_A => QueryType::A,
+            QTYPE_NS => QueryType::NS,
+            QTYPE_CNAME => QueryType::CNAME,
+            QTYPE_SOA => QueryType::SOA,
+            QTYPE_PTR => QueryType::PTR,
+            QTYPE_MX => QueryType::MX,
+            QTYPE_TXT => QueryType::TXT,
+            QTYPE_AAAA => QueryType::AAAA,
             _ => QueryType::Unknown(num),
         }
     }
@@ -33,14 +43,14 @@ impl From<u16> for QueryType {
 impl From<QueryType> for u16 {
     fn from(qtype: QueryType) -> Self {
         match qtype {
-            QueryType::A => 1,
-            QueryType::NS => 2,
-            QueryType::CNAME => 5,
-            QueryType::SOA => 6,
-            QueryType::PTR => 12,
-            QueryType::MX => 15,
-            QueryType::TXT => 16,
-            QueryType::AAAA => 28,
+            QueryType::A => QTYPE_A,
+            QueryType::NS => QTYPE_NS,
+            QueryType::CNAME => QTYPE_CNAME,
+            QueryType::SOA => QTYPE_SOA,
+            QueryType::PTR => QTYPE_PTR,
+            QueryType::MX => QTYPE_MX,
+            QueryType::TXT => QTYPE_TXT,
+            QueryType::AAAA => QTYPE_AAAA,
             QueryType::Unknown(x) => x,
         }
     }

@@ -1,3 +1,6 @@
+use crate::dns::{
+    QTYPE_A, QTYPE_AAAA, QTYPE_CNAME, QTYPE_MX, QTYPE_NS, QTYPE_PTR, QTYPE_SOA, QTYPE_TXT,
+};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -18,7 +21,16 @@ impl Default for DnsStats {
     fn default() -> Self {
         let mut queries_by_type = HashMap::new();
         // Pre-populate common record types
-        for &qtype in &[1, 2, 5, 6, 12, 15, 16, 28] {
+        for &qtype in &[
+            QTYPE_A,
+            QTYPE_NS,
+            QTYPE_CNAME,
+            QTYPE_SOA,
+            QTYPE_PTR,
+            QTYPE_MX,
+            QTYPE_TXT,
+            QTYPE_AAAA,
+        ] {
             queries_by_type.insert(qtype, AtomicU64::new(0));
         }
 
@@ -165,14 +177,14 @@ impl DnsStats {
         writeln!(file, "Queries by Type:")?;
 
         let types = [
-            (1, "A"),
-            (28, "AAAA"),
-            (2, "NS"),
-            (6, "SOA"),
-            (12, "PTR"),
-            (15, "MX"),
-            (16, "TXT"),
-            (5, "CNAME"),
+            (QTYPE_A, "A"),
+            (QTYPE_AAAA, "AAAA"),
+            (QTYPE_NS, "NS"),
+            (QTYPE_SOA, "SOA"),
+            (QTYPE_PTR, "PTR"),
+            (QTYPE_MX, "MX"),
+            (QTYPE_TXT, "TXT"),
+            (QTYPE_CNAME, "CNAME"),
         ];
 
         for (qtype, name) in types {
@@ -188,5 +200,80 @@ impl DnsStats {
         )?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_stats() {
+        let stats = DnsStats::new();
+        assert_eq!(stats.get_total_queries(), 0);
+        assert_eq!(stats.get_cache_hits(), 0);
+        assert_eq!(stats.get_cache_misses(), 0);
+        assert_eq!(stats.get_upstream_queries(), 0);
+    }
+
+    #[test]
+    fn test_record_query() {
+        let stats = DnsStats::new();
+        stats.record_query(QTYPE_A);
+        stats.record_query(QTYPE_A);
+        stats.record_query(QTYPE_AAAA);
+
+        assert_eq!(stats.get_total_queries(), 3);
+        assert_eq!(stats.get_query_count_by_type(QTYPE_A), 2);
+        assert_eq!(stats.get_query_count_by_type(QTYPE_AAAA), 1);
+    }
+
+    #[test]
+    fn test_cache_hit_ratio() {
+        let stats = DnsStats::new();
+        assert_eq!(stats.get_cache_hit_ratio(), 0.0);
+
+        stats.record_cache_hit();
+        stats.record_cache_hit();
+        stats.record_cache_miss();
+
+        let ratio = stats.get_cache_hit_ratio();
+        assert!((ratio - 66.666).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_cache_operations() {
+        let stats = DnsStats::new();
+        stats.record_cache_hit();
+        stats.record_cache_miss();
+        stats.record_upstream_query();
+
+        assert_eq!(stats.get_cache_hits(), 1);
+        assert_eq!(stats.get_cache_misses(), 1);
+        assert_eq!(stats.get_upstream_queries(), 1);
+    }
+
+    #[test]
+    fn test_response_time() {
+        let stats = DnsStats::new();
+        stats.record_query(QTYPE_A); // Need queries for average calculation
+        stats.record_response_time(Duration::from_millis(100));
+        stats.record_query(QTYPE_A);
+        stats.record_response_time(Duration::from_millis(200));
+
+        assert_eq!(stats.get_average_response_time_ms(), 150.0);
+    }
+
+    #[test]
+    fn test_queries_per_second() {
+        let stats = DnsStats::new();
+        std::thread::sleep(Duration::from_millis(100));
+
+        stats.record_query(QTYPE_A);
+        stats.record_query(QTYPE_A);
+
+        let qps = stats.get_queries_per_second();
+        assert!(qps > 0.0);
+        assert!(qps < 100.0); // Should be around 20 qps for 2 queries in 0.1s
     }
 }
