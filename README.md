@@ -40,6 +40,7 @@ See `config.toml.example` for available options:
 Use a custom config file:
 ```bash
 cargo run -- /path/to/config.toml
+```
 ## How It Works
 
 Three-tier lookup: static records → cache → upstream DNS.
