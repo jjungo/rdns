@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(e) => {
             println!("Could not load {} ({}), using defaults", config_path, e);
-            Config::default()
+            Config::default_config()
         }
     };
 

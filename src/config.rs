@@ -45,7 +45,7 @@ impl Config {
         Ok(config)
     }
 
-    pub fn default() -> Self {
+    pub fn default_config() -> Self {
         Config {
             server: ServerConfig {
                 listen_address: "127.0.0.1".to_string(),

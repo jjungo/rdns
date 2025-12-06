@@ -14,8 +14,8 @@ pub struct DnsStats {
     total_response_time_ms: AtomicU64,
 }
 
-impl DnsStats {
-    pub fn new() -> Self {
+impl Default for DnsStats {
+    fn default() -> Self {
         let mut queries_by_type = HashMap::new();
         // Pre-populate common record types
         for &qtype in &[1, 2, 5, 6, 12, 15, 16, 28] {
@@ -31,6 +31,12 @@ impl DnsStats {
             queries_by_type,
             total_response_time_ms: AtomicU64::new(0),
         }
+    }
+}
+
+impl DnsStats {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn record_query(&self, qtype: u16) {

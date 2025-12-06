@@ -47,6 +47,7 @@ impl From<QueryType> for u16 {
 }
 
 #[derive(Debug)]
+#[derive(Default)]
 pub struct DnsHeader {
     pub id: u16,
     pub flags: u16,
@@ -59,14 +60,7 @@ pub struct DnsHeader {
 impl DnsHeader {
     #[allow(dead_code)]
     pub fn new() -> Self {
-        DnsHeader {
-            id: 0,
-            flags: 0,
-            questions: 0,
-            answers: 0,
-            authority: 0,
-            additional: 0,
-        }
+        Self::default()
     }
 
     pub fn from_bytes(buf: &[u8]) -> Result<Self, String> {

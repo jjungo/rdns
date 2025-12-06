@@ -8,3 +8,10 @@ tokio = { version = "1", features = ["full"] }
 trust-dns-resolver = "0.23"
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "dns_benchmarks"
+harness = false

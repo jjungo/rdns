@@ -125,6 +125,11 @@ impl DnsCache {
     }
 
     #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.cache.is_empty()
+    }
+
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.cache.clear();
     }
@@ -137,7 +142,7 @@ mod tests {
 
     #[test]
     fn test_cache_entry_expiration() {
-        let entry = CacheEntry::new(Ipv4Addr::new(1, 1, 1, 1), 1);
+        let entry = CacheEntry::new(RecordData::A(Ipv4Addr::new(1, 1, 1, 1)), 1);
         assert!(!entry.is_expired());
         sleep(Duration::from_secs(2));
         assert!(entry.is_expired());
@@ -146,34 +151,45 @@ mod tests {
     #[test]
     fn test_cache_insert_and_get() {
         let mut cache = DnsCache::new(10);
-        cache.insert("test.com".to_string(), Ipv4Addr::new(1, 1, 1, 1), 300);
+        let entry = vec![CacheEntry::new(RecordData::A(Ipv4Addr::new(1, 1, 1, 1)), 300)];
+        cache.insert("test.com".to_string(), 1, entry);
 
-        let entry = cache.get("test.com");
-        assert!(entry.is_some());
-        assert_eq!(entry.unwrap().ip, Ipv4Addr::new(1, 1, 1, 1));
+        let result = cache.get("test.com", 1);
+        assert!(result.is_some());
+        let entries = result.unwrap();
+        assert_eq!(entries.len(), 1);
+        if let RecordData::A(ip) = entries[0].data {
+            assert_eq!(ip, Ipv4Addr::new(1, 1, 1, 1));
+        } else {
+            panic!("Expected A record");
+        }
     }
 
     #[test]
     fn test_cache_expiration() {
         let mut cache = DnsCache::new(10);
-        cache.insert("test.com".to_string(), Ipv4Addr::new(1, 1, 1, 1), 1);
+        let entry = vec![CacheEntry::new(RecordData::A(Ipv4Addr::new(1, 1, 1, 1)), 1)];
+        cache.insert("test.com".to_string(), 1, entry);
 
         sleep(Duration::from_secs(2));
 
-        let entry = cache.get("test.com");
-        assert!(entry.is_none());
+        let result = cache.get("test.com", 1);
+        assert!(result.is_none());
     }
 
     #[test]
     fn test_cache_eviction() {
         let mut cache = DnsCache::new(2);
-        cache.insert("test1.com".to_string(), Ipv4Addr::new(1, 1, 1, 1), 300);
-        cache.insert("test2.com".to_string(), Ipv4Addr::new(2, 2, 2, 2), 300);
+        let entry1 = vec![CacheEntry::new(RecordData::A(Ipv4Addr::new(1, 1, 1, 1)), 300)];
+        let entry2 = vec![CacheEntry::new(RecordData::A(Ipv4Addr::new(2, 2, 2, 2)), 300)];
+        cache.insert("test1.com".to_string(), 1, entry1);
+        cache.insert("test2.com".to_string(), 1, entry2);
 
         assert_eq!(cache.len(), 2);
 
         // Adding third entry should evict one
-        cache.insert("test3.com".to_string(), Ipv4Addr::new(3, 3, 3, 3), 300);
+        let entry3 = vec![CacheEntry::new(RecordData::A(Ipv4Addr::new(3, 3, 3, 3)), 300)];
+        cache.insert("test3.com".to_string(), 1, entry3);
 
         assert_eq!(cache.len(), 2);
     }
