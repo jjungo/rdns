@@ -53,6 +53,11 @@ impl DnsServer {
         records.insert(domain, ip);
     }
 
+    /// Get a reference to the records map for hot-reloading
+    pub fn get_records(&self) -> Arc<RwLock<HashMap<String, Ipv4Addr>>> {
+        self.records.clone()
+    }
+
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Spawn background task for cache cleanup
         let cache_for_cleanup = self.cache.clone();

@@ -1,10 +1,28 @@
 # rdns DNS Server Configuration
+#
+# HOT-RELOAD SUPPORT:
+# This configuration file is monitored for changes. When you save modifications,
+# the server will automatically reload WITHOUT restarting.
+#
+# What gets hot-reloaded:
+#   ✓ DNS Records ([records] section) - Changes take effect immediately
+#
+# What requires a restart:
+#   ✗ Server settings (listen_address, listen_port)
+#   ✗ Cache settings (max_entries, cleanup_interval)
+#   ✗ Stats settings (file_path, update_interval)
+#   ✗ DNS settings (default_ttl)
+#
+# To reload: Simply edit and save this file. The server will detect changes
+# and apply DNS record updates automatically.
 
 [server]
 # Address to listen on (IPv4)
+# NOTE: Changing this requires server restart
 listen_address = "127.0.0.1"
 # Port to listen on (53 for standard DNS, requires root/sudo)
-listen_port = 53
+# NOTE: Changing this requires server restart
+listen_port = 9052
 
 [cache]
 # Maximum number of cache entries
@@ -24,6 +42,8 @@ default_ttl = 300
 
 # Static DNS records (optional)
 # Format: domain = "ip_address"
+# NOTE: Changes to this section are HOT-RELOADED automatically!
+# Add, modify, or remove records and save - no restart needed.
 [records]
 "example.com" = "93.184.216.34"
 "localhost" = "127.0.0.1"
