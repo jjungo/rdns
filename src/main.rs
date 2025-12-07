@@ -1,6 +1,7 @@
 mod cache;
 mod config;
 mod dns;
+mod handler;
 mod reload;
 mod server;
 mod stats;
