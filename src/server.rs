@@ -1,8 +1,8 @@
 use crate::cache::{CacheEntry, DnsCache, RecordData};
 use crate::config::Config;
 use crate::dns::{
-    DnsAnswer, DnsPacket, QTYPE_A, QTYPE_AAAA, QTYPE_CNAME, QTYPE_MX, QTYPE_NS, QTYPE_PTR,
-    QTYPE_SOA, QTYPE_TXT, QueryType, RCODE_SERVER_FAILURE,
+    DnsAnswer, DnsPacket, QTYPE_A, QTYPE_AAAA, QTYPE_CNAME, QTYPE_HTTPS, QTYPE_MX, QTYPE_NS,
+    QTYPE_PTR, QTYPE_SOA, QTYPE_TXT, QueryType, RCODE_SERVER_FAILURE,
 };
 use crate::stats::DnsStats;
 use std::collections::HashMap;
@@ -248,8 +248,27 @@ async fn handle_query(
             QueryType::TXT => {
                 handle_txt_query(&question.name, &cache, &resolver, &stats, &mut packet).await;
             }
-            _ => {
-                println!("  Query type {:?} not supported", question.qtype);
+            QueryType::HTTPS => {
+                handle_generic_query(
+                    &question.name,
+                    QTYPE_HTTPS,
+                    "HTTPS",
+                    &resolver,
+                    &stats,
+                    &mut packet,
+                )
+                .await;
+            }
+            QueryType::Unknown(qtype) => {
+                handle_generic_query(
+                    &question.name,
+                    qtype,
+                    &format!("TYPE{}", qtype),
+                    &resolver,
+                    &stats,
+                    &mut packet,
+                )
+                .await;
             }
         }
     }
@@ -808,6 +827,69 @@ async fn handle_soa_query(
             }
 
             insert_cache(domain.to_string(), QTYPE_SOA, cache_entries, cache).await;
+        }
+        Err(e) => {
+            println!("  Upstream resolution failed for {}: {}", domain, e);
+            packet.header.set_rcode(RCODE_SERVER_FAILURE);
+            stats.record_unresolved();
+        }
+    }
+}
+
+/// Generic handler for any query type - forwards raw DNS records from upstream
+async fn handle_generic_query(
+    domain: &str,
+    qtype: u16,
+    qtype_name: &str,
+    resolver: &Arc<TokioAsyncResolver>,
+    stats: &Arc<DnsStats>,
+    packet: &mut DnsPacket,
+) {
+    use trust_dns_resolver::proto::rr::RecordType;
+    use trust_dns_resolver::proto::serialize::binary::{BinEncodable, BinEncoder};
+
+    // Record cache miss and upstream query
+    stats.record_cache_miss();
+    stats.record_upstream_query();
+
+    // Convert qtype to RecordType
+    let record_type = RecordType::from(qtype);
+
+    // Forward to upstream
+    println!(
+        "  Forwarding to upstream DNS for {} ({})",
+        domain, qtype_name
+    );
+    match with_timeout(resolver.lookup(domain, record_type), domain, qtype_name).await {
+        Ok(lookup) => {
+            for record in lookup.record_iter() {
+                if let Some(rdata) = record.data() {
+                    // Serialize the raw record data
+                    let mut data = Vec::new();
+                    let mut encoder = BinEncoder::new(&mut data);
+                    if let Ok(()) = rdata.emit(&mut encoder) {
+                        let ttl = record.ttl();
+                        println!(
+                            "  Answer (upstream): {} {} -> <{} bytes> (TTL: {}s)",
+                            domain,
+                            qtype_name,
+                            data.len(),
+                            ttl
+                        );
+
+                        // Create answer with raw data
+                        let answer = crate::dns::DnsAnswer {
+                            name: domain.to_string(),
+                            qtype: QueryType::from(qtype),
+                            qclass: 1,
+                            ttl,
+                            data,
+                        };
+                        packet.answers.push(answer);
+                        packet.header.answers += 1;
+                    }
+                }
+            }
         }
         Err(e) => {
             println!("  Upstream resolution failed for {}: {}", domain, e);

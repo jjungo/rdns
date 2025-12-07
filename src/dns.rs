@@ -65,6 +65,7 @@ pub const QTYPE_PTR: u16 = 12;
 pub const QTYPE_MX: u16 = 15;
 pub const QTYPE_TXT: u16 = 16;
 pub const QTYPE_AAAA: u16 = 28;
+pub const QTYPE_HTTPS: u16 = 65; // RFC 9460
 
 // DNS Response Codes (RFC 1035 Section 4.1.1)
 #[allow(dead_code)]
@@ -90,6 +91,7 @@ pub enum QueryType {
     MX,
     TXT,
     AAAA,
+    HTTPS,
     Unknown(u16),
 }
 
@@ -104,6 +106,7 @@ impl From<u16> for QueryType {
             QTYPE_MX => QueryType::MX,
             QTYPE_TXT => QueryType::TXT,
             QTYPE_AAAA => QueryType::AAAA,
+            QTYPE_HTTPS => QueryType::HTTPS,
             _ => QueryType::Unknown(num),
         }
     }
@@ -120,6 +123,7 @@ impl From<QueryType> for u16 {
             QueryType::MX => QTYPE_MX,
             QueryType::TXT => QTYPE_TXT,
             QueryType::AAAA => QTYPE_AAAA,
+            QueryType::HTTPS => QTYPE_HTTPS,
             QueryType::Unknown(x) => x,
         }
     }
@@ -737,5 +741,123 @@ mod tests {
             }
             _ => panic!("Expected OffsetOutOfBounds error"),
         }
+    }
+
+    #[test]
+    fn test_qtype_https_constant() {
+        // Verify HTTPS query type constant is 65 per RFC 9460
+        assert_eq!(QTYPE_HTTPS, 65);
+    }
+
+    #[test]
+    fn test_query_type_https_conversion() {
+        // Test u16 -> QueryType conversion
+        let qtype = QueryType::from(65u16);
+        assert!(matches!(qtype, QueryType::HTTPS));
+
+        let qtype = QueryType::from(QTYPE_HTTPS);
+        assert!(matches!(qtype, QueryType::HTTPS));
+
+        // Test QueryType -> u16 conversion
+        let num: u16 = QueryType::HTTPS.into();
+        assert_eq!(num, 65);
+        assert_eq!(num, QTYPE_HTTPS);
+    }
+
+    #[test]
+    fn test_query_type_unknown_conversion() {
+        // Test unknown query types are preserved
+        let qtype = QueryType::from(257u16); // CAA record type
+        match qtype {
+            QueryType::Unknown(n) => assert_eq!(n, 257),
+            _ => panic!("Expected Unknown query type"),
+        }
+
+        // Test conversion back to u16
+        let num: u16 = QueryType::Unknown(257).into();
+        assert_eq!(num, 257);
+
+        // Test type 999 (undefined)
+        let qtype = QueryType::from(999u16);
+        match qtype {
+            QueryType::Unknown(n) => assert_eq!(n, 999),
+            _ => panic!("Expected Unknown query type"),
+        }
+    }
+
+    #[test]
+    fn test_all_query_type_conversions() {
+        // Test all known query types convert correctly
+        let type_pairs = vec![
+            (QTYPE_A, QueryType::A),
+            (QTYPE_NS, QueryType::NS),
+            (QTYPE_CNAME, QueryType::CNAME),
+            (QTYPE_SOA, QueryType::SOA),
+            (QTYPE_PTR, QueryType::PTR),
+            (QTYPE_MX, QueryType::MX),
+            (QTYPE_TXT, QueryType::TXT),
+            (QTYPE_AAAA, QueryType::AAAA),
+            (QTYPE_HTTPS, QueryType::HTTPS),
+        ];
+
+        for (num, expected_type) in type_pairs {
+            // Test u16 -> QueryType
+            let qtype = QueryType::from(num);
+            assert_eq!(format!("{:?}", qtype), format!("{:?}", expected_type));
+
+            // Test QueryType -> u16
+            let converted: u16 = qtype.into();
+            assert_eq!(converted, num);
+        }
+    }
+
+    #[test]
+    fn test_dns_question_with_https_type() {
+        let question = DnsQuestion {
+            name: "example.com".to_string(),
+            qtype: QueryType::HTTPS,
+            qclass: 1,
+        };
+
+        let bytes = question.to_bytes();
+
+        // Verify the question serializes correctly
+        // Domain name should be encoded as labels
+        assert!(bytes.len() > 4); // At least domain + qtype + qclass
+
+        // Last 4 bytes should be qtype (2 bytes) and qclass (2 bytes)
+        let len = bytes.len();
+        let qtype_bytes = u16::from_be_bytes([bytes[len - 4], bytes[len - 3]]);
+        let qclass_bytes = u16::from_be_bytes([bytes[len - 2], bytes[len - 1]]);
+
+        assert_eq!(qtype_bytes, QTYPE_HTTPS);
+        assert_eq!(qclass_bytes, 1);
+    }
+
+    #[test]
+    fn test_dns_question_parse_https_type() {
+        // Construct a DNS question for HTTPS record
+        let mut buf = Vec::new();
+
+        // Encode "example.com"
+        buf.push(7); // "example"
+        buf.extend_from_slice(b"example");
+        buf.push(3); // "com"
+        buf.extend_from_slice(b"com");
+        buf.push(0); // null terminator
+
+        // Add QTYPE_HTTPS (65)
+        buf.extend_from_slice(&QTYPE_HTTPS.to_be_bytes());
+
+        // Add QCLASS (1 = IN)
+        buf.extend_from_slice(&1u16.to_be_bytes());
+
+        // Parse the question
+        let (question, offset) = DnsQuestion::from_bytes(&buf, 0).unwrap();
+
+        assert_eq!(question.name, "example.com");
+        assert!(matches!(question.qtype, QueryType::HTTPS));
+        assert_eq!(question.qclass, 1);
+        assert_eq!(offset, buf.len());
     }
 }

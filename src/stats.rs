@@ -1,5 +1,6 @@
 use crate::dns::{
-    QTYPE_A, QTYPE_AAAA, QTYPE_CNAME, QTYPE_MX, QTYPE_NS, QTYPE_PTR, QTYPE_SOA, QTYPE_TXT,
+    QTYPE_A, QTYPE_AAAA, QTYPE_CNAME, QTYPE_HTTPS, QTYPE_MX, QTYPE_NS, QTYPE_PTR, QTYPE_SOA,
+    QTYPE_TXT,
 };
 use std::collections::HashMap;
 use std::fs::File;
@@ -31,6 +32,7 @@ impl Default for DnsStats {
             QTYPE_MX,
             QTYPE_TXT,
             QTYPE_AAAA,
+            QTYPE_HTTPS,
         ] {
             queries_by_type.insert(qtype, AtomicU64::new(0));
         }
@@ -200,6 +202,7 @@ impl DnsStats {
             (QTYPE_MX, "MX"),
             (QTYPE_TXT, "TXT"),
             (QTYPE_CNAME, "CNAME"),
+            (QTYPE_HTTPS, "HTTPS"),
         ];
 
         for (qtype, name) in types {

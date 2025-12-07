@@ -400,3 +400,217 @@ async fn test_concurrent_queries_complete() {
         "Queries should complete within 10 seconds (with 5s timeout per query)"
     );
 }
+
+#[tokio::test]
+async fn test_https_query_type() {
+    let mut config = Config::default_config();
+    config.server.listen_port = 19063;
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    // Query for HTTPS record type (65)
+    let query = create_dns_query("google.com", QueryType::HTTPS);
+    let response = send_dns_query(19063, &query).await.unwrap();
+
+    let packet = DnsPacket::from_bytes(&response).unwrap();
+
+    // Verify the query was processed
+    assert_eq!(packet.header.questions, 1);
+    assert_eq!(packet.questions[0].name, "google.com");
+    assert!(matches!(packet.questions[0].qtype, QueryType::HTTPS));
+
+    // Should have answers from upstream (Google supports HTTPS records)
+    assert!(
+        packet.header.answers > 0,
+        "HTTPS query should return answers from upstream"
+    );
+}
+
+#[tokio::test]
+async fn test_unknown_query_type_caa() {
+    let mut config = Config::default_config();
+    config.server.listen_port = 19064;
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    // Query for CAA record type (257) - an "unknown" type
+    let query = create_dns_query("google.com", QueryType::Unknown(257));
+    let response = send_dns_query(19064, &query).await.unwrap();
+
+    let packet = DnsPacket::from_bytes(&response).unwrap();
+
+    // Verify the query was processed
+    assert_eq!(packet.header.questions, 1);
+    assert_eq!(packet.questions[0].name, "google.com");
+
+    // Verify it's recognized as Unknown(257)
+    match packet.questions[0].qtype {
+        QueryType::Unknown(257) => {} // Expected
+        _ => panic!("Expected Unknown(257) query type"),
+    }
+
+    // Google has CAA records, so should have answers
+    assert!(
+        packet.header.answers > 0,
+        "CAA query should return answers from upstream"
+    );
+}
+
+#[tokio::test]
+async fn test_https_cloudflare() {
+    let mut config = Config::default_config();
+    config.server.listen_port = 19065;
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    // Query for HTTPS record - Cloudflare is known to have HTTPS records
+    let query = create_dns_query("cloudflare.com", QueryType::HTTPS);
+    let response = send_dns_query(19065, &query).await.unwrap();
+
+    let packet = DnsPacket::from_bytes(&response).unwrap();
+
+    assert_eq!(packet.header.questions, 1);
+    assert!(
+        packet.header.answers > 0,
+        "Cloudflare should have HTTPS records"
+    );
+
+    // Verify response has QR bit set (is a response)
+    let flags = u16::from_be_bytes([response[2], response[3]]);
+    assert!(flags & 0x8000 != 0, "QR bit should be set (response)");
+
+    // Verify RA bit set (recursion available)
+    assert!(flags & 0x0080 != 0, "RA bit should be set");
+}
+
+#[tokio::test]
+async fn test_unknown_type_generic_forwarding() {
+    let mut config = Config::default_config();
+    config.server.listen_port = 19066;
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    // Test multiple unknown types
+    let unknown_types = vec![
+        QueryType::Unknown(64),  // SVCB
+        QueryType::Unknown(257), // CAA
+        QueryType::Unknown(99),  // SPF (deprecated but still testable)
+    ];
+
+    for qtype in unknown_types {
+        let query = create_dns_query("example.com", qtype);
+        let response = send_dns_query(19066, &query).await.unwrap();
+
+        let packet = DnsPacket::from_bytes(&response).unwrap();
+
+        // Should process the query without errors
+        assert_eq!(packet.header.questions, 1);
+
+        // Verify response bit is set
+        let flags = u16::from_be_bytes([response[2], response[3]]);
+        assert!(flags & 0x8000 != 0, "Should be a response");
+    }
+}
+
+#[tokio::test]
+async fn test_https_cache_behavior() {
+    let mut config = Config::default_config();
+    config.server.listen_port = 19067;
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    let query = create_dns_query("google.com", QueryType::HTTPS);
+
+    // First query - should go to upstream
+    let response1 = send_dns_query(19067, &query).await.unwrap();
+    let packet1 = DnsPacket::from_bytes(&response1).unwrap();
+
+    // Give a moment for caching (though should be immediate)
+    sleep(Duration::from_millis(10)).await;
+
+    // Second query - may come from cache (note: generic handler doesn't cache yet)
+    let start = std::time::Instant::now();
+    let response2 = send_dns_query(19067, &query).await.unwrap();
+    let duration = start.elapsed();
+    let packet2 = DnsPacket::from_bytes(&response2).unwrap();
+
+    // Both should have answers
+    assert!(packet1.header.answers > 0);
+    assert!(packet2.header.answers > 0);
+
+    // Verify server doesn't hang on repeated queries
+    assert!(
+        duration.as_millis() < 1000,
+        "Second query took {}ms, should be quick",
+        duration.as_millis()
+    );
+}
+
+#[tokio::test]
+async fn test_https_concurrent_queries() {
+    let mut config = Config::default_config();
+    config.server.listen_port = 19068;
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    // Send 5 concurrent HTTPS queries
+    let mut handles = vec![];
+    for _ in 0..5 {
+        handles.push(tokio::spawn(async move {
+            let query = create_dns_query("google.com", QueryType::HTTPS);
+            send_dns_query(19068, &query).await
+        }));
+    }
+
+    // All should succeed
+    for handle in handles {
+        let result = handle.await.unwrap();
+        assert!(result.is_ok(), "HTTPS query should succeed");
+
+        let response = result.unwrap();
+        let packet = DnsPacket::from_bytes(&response).unwrap();
+        assert!(packet.header.answers > 0, "Should have HTTPS answers");
+    }
+}
