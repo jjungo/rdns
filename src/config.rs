@@ -18,6 +18,12 @@ pub struct Config {
 pub struct ServerConfig {
     pub listen_address: String,
     pub listen_port: u16,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+}
+
+fn default_log_level() -> String {
+    "warn".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -50,6 +56,7 @@ impl Config {
             server: ServerConfig {
                 listen_address: "127.0.0.1".to_string(),
                 listen_port: 9053,
+                log_level: "warn".to_string(),
             },
             cache: CacheConfig {
                 max_entries: 1000,
@@ -81,29 +88,29 @@ impl Config {
     pub fn display(&self) {
         let records_count = self.records.len();
 
-        println!("\n═══════════════════════════════════════════════════");
-        println!("           DNS Server Configuration");
-        println!("═══════════════════════════════════════════════════");
-        println!("Server:");
-        println!("  Listen Address:      {}", self.server.listen_address);
-        println!("  Listen Port:         {}", self.server.listen_port);
-        println!();
-        println!("Cache:");
-        println!("  Max Entries:         {}", self.cache.max_entries);
-        println!("  Cleanup Interval:    {}s", self.cache.cleanup_interval);
-        println!();
-        println!("Statistics:");
-        println!("  File Path:           {}", self.stats.file_path);
-        println!("  Update Interval:     {}s", self.stats.update_interval);
-        println!();
-        println!("DNS:");
-        println!("  Default TTL:         {}s", self.dns.default_ttl);
-        println!();
-        println!("Static Records:        {}", records_count);
+        log::info!("\n═══════════════════════════════════════════════════");
+        log::info!("           DNS Server Configuration");
+        log::info!("═══════════════════════════════════════════════════");
+        log::info!("Server:");
+        log::info!("  Listen Address:      {}", self.server.listen_address);
+        log::info!("  Listen Port:         {}", self.server.listen_port);
+        log::info!("");
+        log::info!("Cache:");
+        log::info!("  Max Entries:         {}", self.cache.max_entries);
+        log::info!("  Cleanup Interval:    {}s", self.cache.cleanup_interval);
+        log::info!("");
+        log::info!("Statistics:");
+        log::info!("  File Path:           {}", self.stats.file_path);
+        log::info!("  Update Interval:     {}s", self.stats.update_interval);
+        log::info!("");
+        log::info!("DNS:");
+        log::info!("  Default TTL:         {}s", self.dns.default_ttl);
+        log::info!("");
+        log::info!("Static Records:        {}", records_count);
         for (domain, ip) in &self.records {
-            println!("  {} -> {}", domain, ip);
+            log::info!("  {} -> {}", domain, ip);
         }
-        println!("═══════════════════════════════════════════════════\n");
+        log::info!("═══════════════════════════════════════════════════\n");
     }
 }
 

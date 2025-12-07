@@ -19,7 +19,7 @@ pub fn watch_config_file(
 
     std::thread::spawn(move || {
         if let Err(e) = run_file_watcher(&config_path_clone, tx) {
-            eprintln!("Config file watcher error: {}", e);
+            log::error!("Config file watcher error: {}", e);
         }
     });
 
@@ -40,8 +40,8 @@ fn run_file_watcher(
     // Watch the config file
     watcher.watch(&path, RecursiveMode::NonRecursive)?;
 
-    println!("Watching config file for changes: {}", config_path);
-    println!("File watcher initialized successfully");
+    log::info!("Watching config file for changes: {}", config_path);
+    log::info!("File watcher initialized successfully");
 
     // Keep watcher alive by moving it into the loop
     let _watcher = watcher;
@@ -59,7 +59,7 @@ fn run_file_watcher(
                         "\n[CONFIG RELOAD] File modification detected: {}",
                         config_path
                     );
-                    println!("[CONFIG RELOAD] Event type: {:?}", kind);
+                    log::debug!("[CONFIG RELOAD] Event type: {:?}", kind);
 
                     match load_and_validate_config(config_path) {
                         Ok(new_config) => {
@@ -86,10 +86,10 @@ fn run_file_watcher(
                 }
             }
             Ok(Err(e)) => {
-                eprintln!("Watch error: {}", e);
+                log::error!("Watch error: {}", e);
             }
             Err(e) => {
-                eprintln!("Channel receive error: {}", e);
+                log::error!("Channel receive error: {}", e);
                 break;
             }
         }
@@ -110,7 +110,7 @@ fn load_and_validate_config(path: &str) -> Result<Config, Box<dyn std::error::Er
 
 /// Validates a configuration to ensure it's valid before applying
 fn validate_config(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
-    println!("[CONFIG RELOAD] Validating configuration...");
+    log::debug!("[CONFIG RELOAD] Validating configuration...");
 
     // Validate listen port
     if config.server.listen_port == 0 {

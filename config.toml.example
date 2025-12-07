@@ -22,19 +22,23 @@
 listen_address = "127.0.0.1"
 # Port to listen on (53 for standard DNS, requires root/sudo)
 # NOTE: Changing this requires server restart
-listen_port = 9052
+listen_port = 53
+# Log level: trace, debug, info, warn, error
+# Default: warn
+# NOTE: Changing this requires server restart
+log_level = "info"
 
 [cache]
 # Maximum number of cache entries
-max_entries = 1000
+max_entries = 10000
 # Cache cleanup interval in seconds
-cleanup_interval = 60
+cleanup_interval = 300
 
 [stats]
 # Stats file path
 file_path = "dns_stats.txt"
 # Stats update interval in seconds
-update_interval = 60
+update_interval = 10
 
 [dns]
 # Default TTL for responses in seconds
@@ -48,3 +52,4 @@ default_ttl = 300
 "example.com" = "93.184.216.34"
 "localhost" = "127.0.0.1"
 "test.local" = "192.168.1.100"
+"tatooine" = "192.168.0.5"

@@ -21,21 +21,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Try to load config file, fall back to defaults if not found
     let (config, config_loaded) = match Config::from_file(config_path) {
-        Ok(cfg) => {
-            println!("Loaded configuration from {}", config_path);
-            (cfg, true)
-        }
+        Ok(cfg) => (cfg, true),
         Err(e) => {
-            println!("Could not load {} ({}), using defaults", config_path, e);
+            eprintln!("Could not load {} ({}), using defaults", config_path, e);
             (Config::default_config(), false)
         }
     };
+
+    // Initialize logger with log level from config
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or(&config.server.log_level),
+    )
+    .init();
+
+    if config_loaded {
+        log::info!("Loaded configuration from {}", config_path);
+    } else {
+        log::info!("Using default configuration");
+    }
 
     // Print applied configuration
     config.display();
 
     let addr = config.listen_addr();
-    println!("Starting DNS server on {}", addr);
+    log::info!("Starting DNS server on {}", addr);
 
     let server = DnsServer::new(&addr, config).await?;
 
@@ -43,17 +52,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reload_rx = if config_loaded {
         match reload::watch_config_file(config_path.to_string()) {
             Ok(rx) => {
-                println!("Config hot-reload enabled for: {}\n", config_path);
+                log::info!("Config hot-reload enabled for: {}", config_path);
                 Some(rx)
             }
             Err(e) => {
-                eprintln!("Warning: Failed to setup config watcher: {}", e);
-                eprintln!("Continuing without hot-reload support\n");
+                log::warn!("Failed to setup config watcher: {}", e);
+                log::warn!("Continuing without hot-reload support");
                 None
             }
         }
     } else {
-        println!("Config hot-reload disabled (no config file loaded)\n");
+        log::info!("Config hot-reload disabled (no config file loaded)");
         None
     };
 
@@ -65,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match msg {
                     reload::ReloadMessage::ConfigChanged(new_config) => {
                         if let Err(e) = reload::apply_config_update(&new_config, &records).await {
-                            eprintln!("Failed to apply config update: {}", e);
+                            log::error!("Failed to apply config update: {}", e);
                         }
                     }
                 }
