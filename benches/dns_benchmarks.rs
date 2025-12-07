@@ -84,7 +84,7 @@ fn bench_cache_operations(c: &mut Criterion) {
 
     // Benchmark cache insertion
     group.bench_function("insert", |b| {
-        let mut cache = DnsCache::new(1000);
+        let mut cache = DnsCache::new(1000, 300);
         let mut counter = 0u32;
         b.iter(|| {
             let domain = format!("domain{}.com", counter);
@@ -99,7 +99,7 @@ fn bench_cache_operations(c: &mut Criterion) {
 
     // Benchmark cache lookup - hit
     group.bench_function("lookup_hit", |b| {
-        let mut cache = DnsCache::new(1000);
+        let mut cache = DnsCache::new(1000, 300);
         // Pre-populate cache
         for i in 0..100 {
             let domain = format!("domain{}.com", i);
@@ -120,7 +120,7 @@ fn bench_cache_operations(c: &mut Criterion) {
 
     // Benchmark cache lookup - miss
     group.bench_function("lookup_miss", |b| {
-        let mut cache = DnsCache::new(1000);
+        let mut cache = DnsCache::new(1000, 300);
         let mut counter = 0;
 
         b.iter(|| {
@@ -145,7 +145,7 @@ fn bench_cache_cleanup(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
             b.iter_batched(
                 || {
-                    let mut cache = DnsCache::new(1500);
+                    let mut cache = DnsCache::new(1500, 300);
                     // Pre-populate with expired entries (TTL=0 means instant expiration)
                     for i in 0..size {
                         let domain = format!("domain{}.com", i);

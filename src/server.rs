@@ -34,8 +34,8 @@ impl DnsServer {
         // Parse records from config
         let records = config.parse_records()?;
 
-        // Create cache with configured limit
-        let cache = DnsCache::new(config.cache.max_entries);
+        // Create cache with configured limit and TTL
+        let cache = DnsCache::new(config.cache.max_entries, config.cache.default_ttl);
 
         // Create resolver with system configuration
         let resolver =
@@ -152,6 +152,12 @@ async fn check_cache(
     stats.record_cache_miss();
     stats.record_upstream_query();
     None
+}
+
+/// Helper function to get default TTL from cache
+async fn get_default_ttl(cache: &Arc<RwLock<DnsCache>>) -> u32 {
+    let cache_guard = cache.read().await;
+    cache_guard.default_ttl()
 }
 
 /// Helper function to insert entries into cache
@@ -317,7 +323,7 @@ async fn handle_a_query(
     log::debug!("  Forwarding to upstream DNS for {} (A)", domain);
     match with_timeout(resolver.lookup_ip(domain), domain, "A").await {
         Ok(lookup) => {
-            let ttl = 300u32;
+            let ttl = get_default_ttl(cache).await;
             let mut cache_entries = Vec::new();
 
             for ip in lookup.iter() {
@@ -373,7 +379,7 @@ async fn handle_aaaa_query(
     log::debug!("  Forwarding to upstream DNS for {} (AAAA)", domain);
     match with_timeout(resolver.lookup_ip(domain), domain, "AAAA").await {
         Ok(lookup) => {
-            let ttl = 300u32;
+            let ttl = get_default_ttl(cache).await;
             let mut cache_entries = Vec::new();
 
             for ip in lookup.iter() {
@@ -430,7 +436,7 @@ async fn handle_ns_query(
     log::debug!("  Forwarding to upstream DNS for {} (NS)", domain);
     match with_timeout(resolver.lookup(domain, RecordType::NS), domain, "NS").await {
         Ok(lookup) => {
-            let ttl = 300u32;
+            let ttl = get_default_ttl(cache).await;
             let mut cache_entries = Vec::new();
 
             for record in lookup.record_iter() {
@@ -501,7 +507,7 @@ async fn handle_mx_query(
     log::debug!("  Forwarding to upstream DNS for {} (MX)", domain);
     match with_timeout(resolver.lookup(domain, RecordType::MX), domain, "MX").await {
         Ok(lookup) => {
-            let ttl = 300u32;
+            let ttl = get_default_ttl(cache).await;
             let mut cache_entries = Vec::new();
 
             for record in lookup.record_iter() {
@@ -575,7 +581,7 @@ async fn handle_cname_query(
     log::debug!("  Forwarding to upstream DNS for {} (CNAME)", domain);
     match with_timeout(resolver.lookup(domain, RecordType::CNAME), domain, "CNAME").await {
         Ok(lookup) => {
-            let ttl = 300u32;
+            let ttl = get_default_ttl(cache).await;
             let mut cache_entries = Vec::new();
 
             for record in lookup.record_iter() {
@@ -640,7 +646,7 @@ async fn handle_ptr_query(
     log::debug!("  Forwarding to upstream DNS for {} (PTR)", domain);
     match with_timeout(resolver.lookup(domain, RecordType::PTR), domain, "PTR").await {
         Ok(lookup) => {
-            let ttl = 300u32;
+            let ttl = get_default_ttl(cache).await;
             let mut cache_entries = Vec::new();
 
             for record in lookup.record_iter() {
@@ -705,7 +711,7 @@ async fn handle_txt_query(
     log::debug!("  Forwarding to upstream DNS for {} (TXT)", domain);
     match with_timeout(resolver.lookup(domain, RecordType::TXT), domain, "TXT").await {
         Ok(lookup) => {
-            let ttl = 300u32;
+            let ttl = get_default_ttl(cache).await;
             let mut cache_entries = Vec::new();
 
             for record in lookup.record_iter() {
@@ -804,7 +810,7 @@ async fn handle_soa_query(
     log::debug!("  Forwarding to upstream DNS for {} (SOA)", domain);
     match with_timeout(resolver.lookup(domain, RecordType::SOA), domain, "SOA").await {
         Ok(lookup) => {
-            let ttl = 300u32;
+            let ttl = get_default_ttl(cache).await;
             let mut cache_entries = Vec::new();
 
             for record in lookup.record_iter() {

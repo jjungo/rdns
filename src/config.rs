@@ -8,7 +8,6 @@ pub struct Config {
     pub server: ServerConfig,
     pub cache: CacheConfig,
     pub stats: StatsConfig,
-    #[allow(dead_code)]
     pub dns: DnsConfig,
     #[serde(default)]
     pub records: HashMap<String, String>,
@@ -30,6 +29,7 @@ fn default_log_level() -> String {
 pub struct CacheConfig {
     pub max_entries: usize,
     pub cleanup_interval: u64,
+    pub default_ttl: u32,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -38,7 +38,6 @@ pub struct StatsConfig {
     pub update_interval: u64,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 pub struct DnsConfig {
     pub default_ttl: u32,
@@ -61,6 +60,7 @@ impl Config {
             cache: CacheConfig {
                 max_entries: 1000,
                 cleanup_interval: 60,
+                default_ttl: 300,
             },
             stats: StatsConfig {
                 file_path: "dns_stats.txt".to_string(),
@@ -98,6 +98,7 @@ impl Config {
         log::info!("Cache:");
         log::info!("  Max Entries:         {}", self.cache.max_entries);
         log::info!("  Cleanup Interval:    {}s", self.cache.cleanup_interval);
+        log::info!("  Default TTL:         {}s", self.cache.default_ttl);
         log::info!("");
         log::info!("Statistics:");
         log::info!("  File Path:           {}", self.stats.file_path);
@@ -125,6 +126,7 @@ mod tests {
         assert_eq!(config.server.listen_port, 9053);
         assert_eq!(config.cache.max_entries, 1000);
         assert_eq!(config.cache.cleanup_interval, 60);
+        assert_eq!(config.cache.default_ttl, 300);
         assert_eq!(config.dns.default_ttl, 300);
         assert_eq!(config.records.len(), 0);
     }
@@ -166,5 +168,21 @@ mod tests {
         let config = Config::default_config();
         let parsed = config.parse_records().unwrap();
         assert_eq!(parsed.len(), 0);
+    }
+
+    #[test]
+    fn test_cache_default_ttl() {
+        let mut config = Config::default_config();
+
+        // Test default value
+        assert_eq!(config.cache.default_ttl, 300);
+
+        // Test setting custom value
+        config.cache.default_ttl = 600;
+        assert_eq!(config.cache.default_ttl, 600);
+
+        // Test another value
+        config.cache.default_ttl = 60;
+        assert_eq!(config.cache.default_ttl, 60);
     }
 }

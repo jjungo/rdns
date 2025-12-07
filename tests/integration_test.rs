@@ -541,6 +541,85 @@ async fn test_unknown_type_generic_forwarding() {
 }
 
 #[tokio::test]
+async fn test_custom_cache_ttl() {
+    let mut config = Config::default_config();
+    config.server.listen_port = 19069;
+    config.cache.default_ttl = 600; // Custom TTL of 10 minutes
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    // Query a domain that will be cached with custom TTL
+    let query = create_dns_query("github.com", QueryType::A);
+    let response = send_dns_query(19069, &query).await.unwrap();
+
+    let packet = DnsPacket::from_bytes(&response).unwrap();
+
+    // Verify we got a valid response
+    assert_eq!(packet.header.questions, 1);
+    assert!(
+        packet.header.answers > 0,
+        "Should have answers from upstream"
+    );
+
+    // Second query should come from cache
+    let response2 = send_dns_query(19069, &query).await.unwrap();
+    let packet2 = DnsPacket::from_bytes(&response2).unwrap();
+
+    assert_eq!(packet2.header.questions, 1);
+    assert!(packet2.header.answers > 0, "Should have cached answers");
+}
+
+#[tokio::test]
+async fn test_cache_ttl_expiration() {
+    // Test that cached entries expire according to configured TTL
+    let mut config = Config::default_config();
+    config.server.listen_port = 19070;
+    config.cache.default_ttl = 2; // Very short TTL of 2 seconds
+
+    let addr = config.listen_addr();
+    let server = DnsServer::new(&addr, config).await.unwrap();
+
+    tokio::spawn(async move {
+        server.run().await.ok();
+    });
+
+    sleep(Duration::from_millis(100)).await;
+
+    // First query - should go to upstream and cache with 2 second TTL
+    let query = create_dns_query("example.com", QueryType::A);
+    let response1 = send_dns_query(19070, &query).await.unwrap();
+    let packet1 = DnsPacket::from_bytes(&response1).unwrap();
+    assert!(
+        packet1.header.answers > 0,
+        "Should have answers from upstream"
+    );
+
+    // Immediate second query - should come from cache
+    let response2 = send_dns_query(19070, &query).await.unwrap();
+    let packet2 = DnsPacket::from_bytes(&response2).unwrap();
+    assert!(packet2.header.answers > 0, "Should have cached answers");
+
+    // Wait for cache to expire (2 seconds + buffer)
+    sleep(Duration::from_secs(3)).await;
+
+    // Third query - cache should be expired, will go to upstream again
+    // We can't directly verify it went to upstream, but we verify it still works
+    let response3 = send_dns_query(19070, &query).await.unwrap();
+    let packet3 = DnsPacket::from_bytes(&response3).unwrap();
+    assert!(
+        packet3.header.answers > 0,
+        "Should still get answers after cache expiration"
+    );
+}
+
+#[tokio::test]
 async fn test_https_cache_behavior() {
     let mut config = Config::default_config();
     config.server.listen_port = 19067;

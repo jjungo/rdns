@@ -56,14 +56,20 @@ impl CacheEntry {
 pub struct DnsCache {
     cache: HashMap<(String, u16), Vec<CacheEntry>>, // Key is (domain, query_type)
     max_entries: usize,
+    default_ttl: u32,
 }
 
 impl DnsCache {
-    pub fn new(max_entries: usize) -> Self {
+    pub fn new(max_entries: usize, default_ttl: u32) -> Self {
         DnsCache {
             cache: HashMap::new(),
             max_entries,
+            default_ttl,
         }
+    }
+
+    pub fn default_ttl(&self) -> u32 {
+        self.default_ttl
     }
 
     pub fn get(&mut self, domain: &str, qtype: u16) -> Option<Vec<CacheEntry>> {
@@ -154,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_cache_insert_and_get() {
-        let mut cache = DnsCache::new(10);
+        let mut cache = DnsCache::new(10, 300);
         let entry = vec![CacheEntry::new(
             RecordData::A(Ipv4Addr::new(1, 1, 1, 1)),
             300,
@@ -174,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_cache_expiration() {
-        let mut cache = DnsCache::new(10);
+        let mut cache = DnsCache::new(10, 300);
         let entry = vec![CacheEntry::new(RecordData::A(Ipv4Addr::new(1, 1, 1, 1)), 1)];
         cache.insert("test.com".to_string(), 1, entry);
 
@@ -186,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_cache_eviction() {
-        let mut cache = DnsCache::new(2);
+        let mut cache = DnsCache::new(2, 300);
         let entry1 = vec![CacheEntry::new(
             RecordData::A(Ipv4Addr::new(1, 1, 1, 1)),
             300,
@@ -208,5 +214,73 @@ mod tests {
         cache.insert("test3.com".to_string(), 1, entry3);
 
         assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn test_cache_default_ttl() {
+        let cache = DnsCache::new(100, 600);
+        assert_eq!(cache.default_ttl(), 600);
+
+        let cache2 = DnsCache::new(100, 300);
+        assert_eq!(cache2.default_ttl(), 300);
+    }
+
+    #[test]
+    fn test_cache_respects_configured_ttl() {
+        // Test that cache entries expire according to the configured TTL
+        let mut cache = DnsCache::new(10, 2); // 2 second TTL
+
+        // Create entry using the cache's configured TTL
+        let ttl = cache.default_ttl();
+        let entry = vec![CacheEntry::new(
+            RecordData::A(Ipv4Addr::new(1, 1, 1, 1)),
+            ttl,
+        )];
+        cache.insert("test.com".to_string(), 1, entry);
+
+        // Entry should exist immediately
+        let result = cache.get("test.com", 1);
+        assert!(result.is_some(), "Entry should exist right after insertion");
+
+        // Wait for TTL to expire (2 seconds + small buffer)
+        sleep(Duration::from_secs(3));
+
+        // Entry should be expired now
+        let result = cache.get("test.com", 1);
+        assert!(
+            result.is_none(),
+            "Entry should be expired after configured TTL"
+        );
+    }
+
+    #[test]
+    fn test_cache_different_ttl_values() {
+        // Test with very short TTL
+        let mut cache_short = DnsCache::new(10, 1);
+        let entry = vec![CacheEntry::new(
+            RecordData::A(Ipv4Addr::new(1, 1, 1, 1)),
+            cache_short.default_ttl(),
+        )];
+        cache_short.insert("short.com".to_string(), 1, entry);
+
+        sleep(Duration::from_secs(2));
+        assert!(
+            cache_short.get("short.com", 1).is_none(),
+            "Short TTL should expire"
+        );
+
+        // Test with longer TTL
+        let mut cache_long = DnsCache::new(10, 10);
+        let entry = vec![CacheEntry::new(
+            RecordData::A(Ipv4Addr::new(2, 2, 2, 2)),
+            cache_long.default_ttl(),
+        )];
+        cache_long.insert("long.com".to_string(), 1, entry);
+
+        sleep(Duration::from_secs(2));
+        assert!(
+            cache_long.get("long.com", 1).is_some(),
+            "Long TTL should still be valid"
+        );
     }
 }
