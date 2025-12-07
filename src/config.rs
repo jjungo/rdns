@@ -8,7 +8,6 @@ pub struct Config {
     pub server: ServerConfig,
     pub cache: CacheConfig,
     pub stats: StatsConfig,
-    pub dns: DnsConfig,
     #[serde(default)]
     pub records: HashMap<String, String>,
 }
@@ -38,11 +37,6 @@ pub struct StatsConfig {
     pub update_interval: u64,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct DnsConfig {
-    pub default_ttl: u32,
-}
-
 impl Config {
     pub fn from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let contents = fs::read_to_string(path)?;
@@ -66,7 +60,6 @@ impl Config {
                 file_path: "dns_stats.txt".to_string(),
                 update_interval: 60,
             },
-            dns: DnsConfig { default_ttl: 300 },
             records: HashMap::new(),
         }
     }
@@ -104,9 +97,6 @@ impl Config {
         log::info!("  File Path:           {}", self.stats.file_path);
         log::info!("  Update Interval:     {}s", self.stats.update_interval);
         log::info!("");
-        log::info!("DNS:");
-        log::info!("  Default TTL:         {}s", self.dns.default_ttl);
-        log::info!("");
         log::info!("Static Records:        {}", records_count);
         for (domain, ip) in &self.records {
             log::info!("  {} -> {}", domain, ip);
@@ -127,7 +117,6 @@ mod tests {
         assert_eq!(config.cache.max_entries, 1000);
         assert_eq!(config.cache.cleanup_interval, 60);
         assert_eq!(config.cache.default_ttl, 300);
-        assert_eq!(config.dns.default_ttl, 300);
         assert_eq!(config.records.len(), 0);
     }
 

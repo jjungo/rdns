@@ -8,10 +8,9 @@
 #   ✓ DNS Records ([records] section) - Changes take effect immediately
 #
 # What requires a restart:
-#   ✗ Server settings (listen_address, listen_port)
-#   ✗ Cache settings (max_entries, cleanup_interval)
+#   ✗ Server settings (listen_address, listen_port, log_level)
+#   ✗ Cache settings (max_entries, cleanup_interval, default_ttl)
 #   ✗ Stats settings (file_path, update_interval)
-#   ✗ DNS settings (default_ttl)
 #
 # To reload: Simply edit and save this file. The server will detect changes
 # and apply DNS record updates automatically.
@@ -26,7 +25,7 @@ listen_port = 53
 # Log level: trace, debug, info, warn, error
 # Default: warn
 # NOTE: Changing this requires server restart
-log_level = "info"
+log_level = "debug"
 
 [cache]
 # Maximum number of cache entries
@@ -41,10 +40,6 @@ default_ttl = 300
 file_path = "dns_stats.txt"
 # Stats update interval in seconds
 update_interval = 10
-
-[dns]
-# Default TTL for responses in seconds
-default_ttl = 300
 
 # Static DNS records (optional)
 # Format: domain = "ip_address"
