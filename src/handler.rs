@@ -3,11 +3,11 @@ use crate::dns::{
     DnsAnswer, DnsPacket, QTYPE_A, QTYPE_AAAA, QTYPE_CNAME, QTYPE_MX, QTYPE_NS, QTYPE_PTR,
     QTYPE_SOA, QTYPE_TXT, RCODE_SERVER_FAILURE,
 };
+use crate::resolver_pool::ResolverPool;
 use crate::stats::DnsStats;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use trust_dns_resolver::TokioAsyncResolver;
 use trust_dns_resolver::proto::rr::{RData, RecordType as DnsRecordType};
 
 /// Abstraction over DNS record type operations
@@ -439,19 +439,19 @@ impl RecordType for SOARecord {
 /// Delegates record-specific operations to the RecordType trait
 pub struct QueryHandler<'a> {
     pub cache: &'a Arc<RwLock<DnsCache>>,
-    pub resolver: &'a Arc<TokioAsyncResolver>,
+    pub resolver_pool: &'a Arc<ResolverPool>,
     pub stats: &'a Arc<DnsStats>,
 }
 
 impl<'a> QueryHandler<'a> {
     pub fn new(
         cache: &'a Arc<RwLock<DnsCache>>,
-        resolver: &'a Arc<TokioAsyncResolver>,
+        resolver_pool: &'a Arc<ResolverPool>,
         stats: &'a Arc<DnsStats>,
     ) -> Self {
         Self {
             cache,
-            resolver,
+            resolver_pool,
             stats,
         }
     }
@@ -505,7 +505,8 @@ impl<'a> QueryHandler<'a> {
         );
 
         match with_timeout(
-            self.resolver.lookup(domain, record_type),
+            self.resolver_pool
+                .lookup::<trust_dns_resolver::lookup::Lookup>(domain, record_type),
             domain,
             R::qtype_name(),
         )

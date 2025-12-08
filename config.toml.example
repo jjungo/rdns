@@ -27,6 +27,19 @@ listen_port = 53
 # NOTE: Changing this requires server restart
 log_level = "debug"
 
+# Upstream DNS servers for forwarding (optional)
+# If not specified, uses system DNS configuration
+# Supports multiple servers for fallback - tries in order until one succeeds
+# Format: "ip:port" or "ip" (defaults to port 53)
+# Supports both IPv4 and IPv6
+# NOTE: Changing this requires server restart
+upstream_servers = [
+    "8.8.8.8",           # Google DNS (primary)
+    "1.1.1.1",           # Cloudflare DNS (fallback)
+    # "8.8.4.4:53",      # Google DNS secondary
+    # "2001:4860:4860::8888",  # Google DNS IPv6
+]
+
 [cache]
 # Maximum number of cache entries
 max_entries = 10000

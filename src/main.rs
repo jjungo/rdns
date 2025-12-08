@@ -3,6 +3,7 @@ mod config;
 mod dns;
 mod handler;
 mod reload;
+mod resolver_pool;
 mod server;
 mod stats;
 

@@ -2,6 +2,7 @@ use crate::cache::DnsCache;
 use crate::config::Config;
 use crate::dns::{DnsAnswer, DnsPacket, QTYPE_HTTPS, QueryType, RCODE_SERVER_FAILURE};
 use crate::handler::*;
+use crate::resolver_pool::ResolverPool;
 use crate::stats::DnsStats;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -9,14 +10,12 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
-use trust_dns_resolver::TokioAsyncResolver;
-use trust_dns_resolver::config::*;
 
 pub struct DnsServer {
     records: Arc<RwLock<HashMap<String, Ipv4Addr>>>,
     cache: Arc<RwLock<DnsCache>>,
     socket: Arc<UdpSocket>,
-    resolver: Arc<TokioAsyncResolver>,
+    resolver_pool: Arc<ResolverPool>,
     stats: Arc<DnsStats>,
     config: Config,
 }
@@ -32,15 +31,15 @@ impl DnsServer {
         // Create cache with configured limit and TTL
         let cache = DnsCache::new(config.cache.max_entries, config.cache.default_ttl);
 
-        // Create resolver with system configuration
-        let resolver =
-            TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+        // Create resolver pool with configured upstream servers
+        let resolver_pool = ResolverPool::new(config.server.upstream_servers.clone())
+            .map_err(|e| format!("Failed to create resolver pool: {}", e))?;
 
         Ok(DnsServer {
             records: Arc::new(RwLock::new(records)),
             cache: Arc::new(RwLock::new(cache)),
             socket: Arc::new(socket),
-            resolver: Arc::new(resolver),
+            resolver_pool: Arc::new(resolver_pool),
             stats: Arc::new(DnsStats::new()),
             config,
         })
@@ -107,7 +106,7 @@ impl DnsServer {
             let records = self.records.clone();
             let cache = self.cache.clone();
             let socket = self.socket.clone();
-            let resolver = self.resolver.clone();
+            let resolver_pool = self.resolver_pool.clone();
             let stats = self.stats.clone();
 
             tokio::spawn(async move {
@@ -118,7 +117,7 @@ impl DnsServer {
                     socket,
                     records,
                     cache,
-                    resolver,
+                    resolver_pool,
                     stats.clone(),
                 )
                 .await
@@ -137,7 +136,7 @@ async fn handle_query(
     socket: Arc<UdpSocket>,
     records: Arc<RwLock<HashMap<String, Ipv4Addr>>>,
     cache: Arc<RwLock<DnsCache>>,
-    resolver: Arc<TokioAsyncResolver>,
+    resolver_pool: Arc<ResolverPool>,
     stats: Arc<DnsStats>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut packet = DnsPacket::from_bytes(&data)?;
@@ -153,7 +152,7 @@ async fn handle_query(
     packet.header.set_recursion_available();
 
     // Create query handler
-    let handler = QueryHandler::new(&cache, &resolver, &stats);
+    let handler = QueryHandler::new(&cache, &resolver_pool, &stats);
 
     let questions = packet.questions.clone();
     for question in &questions {
@@ -206,7 +205,7 @@ async fn handle_query(
                     &question.name,
                     QTYPE_HTTPS,
                     "HTTPS",
-                    &resolver,
+                    &resolver_pool,
                     &stats,
                     &mut packet,
                 )
@@ -217,7 +216,7 @@ async fn handle_query(
                     &question.name,
                     qtype,
                     &format!("TYPE{}", qtype),
-                    &resolver,
+                    &resolver_pool,
                     &stats,
                     &mut packet,
                 )
@@ -260,7 +259,7 @@ async fn handle_generic_query(
     domain: &str,
     qtype: u16,
     qtype_name: &str,
-    resolver: &Arc<TokioAsyncResolver>,
+    resolver_pool: &Arc<ResolverPool>,
     stats: &Arc<DnsStats>,
     packet: &mut DnsPacket,
 ) {
@@ -280,7 +279,13 @@ async fn handle_generic_query(
         domain,
         qtype_name
     );
-    match with_timeout(resolver.lookup(domain, record_type), domain, qtype_name).await {
+    match with_timeout(
+        resolver_pool.lookup::<trust_dns_resolver::lookup::Lookup>(domain, record_type),
+        domain,
+        qtype_name,
+    )
+    .await
+    {
         Ok(lookup) => {
             for record in lookup.record_iter() {
                 if let Some(rdata) = record.data() {

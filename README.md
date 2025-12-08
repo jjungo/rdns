@@ -43,7 +43,7 @@ cargo run -- /path/to/config.toml
 ```
 ## How It Works
 
-Three-tier lookup: static records → cache → upstream DNS.
+Three-tier lookup: static records -> cache -> upstream DNS.
 
 Upstream responses are cached with TTL (default 300s). Performance metrics written to `dns_stats.txt` every 60 seconds.
 

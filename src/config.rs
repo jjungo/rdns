@@ -18,6 +18,8 @@ pub struct ServerConfig {
     pub listen_port: u16,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default)]
+    pub upstream_servers: Vec<String>,
 }
 
 fn default_log_level() -> String {
@@ -50,6 +52,7 @@ impl Config {
                 listen_address: "127.0.0.1".to_string(),
                 listen_port: 9053,
                 log_level: "warn".to_string(),
+                upstream_servers: Vec::new(),
             },
             cache: CacheConfig {
                 max_entries: 1000,
@@ -87,6 +90,17 @@ impl Config {
         log::info!("Server:");
         log::info!("  Listen Address:      {}", self.server.listen_address);
         log::info!("  Listen Port:         {}", self.server.listen_port);
+        if self.server.upstream_servers.is_empty() {
+            log::info!("  Upstream Servers:    System DNS (default)");
+        } else {
+            log::info!(
+                "  Upstream Servers:    {} configured",
+                self.server.upstream_servers.len()
+            );
+            for (i, upstream) in self.server.upstream_servers.iter().enumerate() {
+                log::info!("    {}. {}", i + 1, upstream);
+            }
+        }
         log::info!("");
         log::info!("Cache:");
         log::info!("  Max Entries:         {}", self.cache.max_entries);
